@@ -22,3 +22,4 @@ nbproject/
 nginx/config
 util/Makefile
 util/mapcache_seed
+mapcache.kdev4
