@@ -34,6 +34,8 @@
 
 #ifdef USE_GDAL
 
+#define DEV_MODE
+
 #include <gdal.h>
 #include <cpl_conv.h>
 
@@ -52,31 +54,209 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
   double minx, miny, maxx, maxy;
   double gminx, gminy, gmaxx, gmaxy;
   int width, height;
-  char* srs;
+  char *dstSRS;
+  char *srcSRS = "";
+  char* inputfile;
+
+  OGRSpatialReferenceH hSRS;
+  GDALDatasetH hDataset;
   
+  mapcache_buffer *data = mapcache_buffer_create(0,ctx->pool);
+  mapcache_source_gdal *gdal = (mapcache_source_gdal*)map->tileset->source;
+  inputfile = gdal->datastr;
   
-  //ctx->set_error(ctx,MAPCACHE_WARN,"EXTENT: (%f,%f)-(%f,%f), srs: %s",map->extent.minx,map->extent.miny,map->extent.maxx,map->extent.maxy, map->grid_link->grid->srs);
-  
-  
-  //mapcache_source_gdal *gdal = (mapcache_source_gdal*)map->tileset->source;
+  // extent of tile:
   minx = map->extent.minx;
   miny = map->extent.miny;
   maxx = map->extent.maxx;
   maxy = map->extent.maxy;
+  // width of tile (pixels)
   width = map->width;
+  // heoight of tile (pixel)
   height = map->height;
-  srs = map->grid_link->grid->srs;
   
+  // extent of dataset
   gminx = map->grid_link->grid->extent.minx;
   gminy = map->grid_link->grid->extent.miny;
   gmaxx = map->grid_link->grid->extent.maxx;
   gmaxy = map->grid_link->grid->extent.maxy;
+
+#ifdef DEV_MODE
+  //ctx->log(ctx,MAPCACHE_NOTICE,"EXTENT: (%f,%f)-(%f,%f) [(%f,%f)-(%f,%f)], srs: %s",map->extent.minx,map->extent.miny,map->extent.maxx,map->extent.maxy, gminx, gminy, gmaxx, gmaxy, map->grid_link->grid->srs);
+  //ctx->log(ctx,MAPCACHE_NOTICE,"file: %s", gdal->datastr);
+  //ctx->log(ctx,MAPCACHE_NOTICE,"width: %i, height: %i", width, height);
+#endif  
   
-  ctx->log(ctx,MAPCACHE_NOTICE,"EXTENT: (%f,%f)-(%f,%f) [(%f,%f)-(%f,%f)], srs: %s",map->extent.minx,map->extent.miny,map->extent.maxx,map->extent.maxy, gminx, gminy, gmaxx, gmaxy, map->grid_link->grid->srs);
+  // Setup GDAL
+  GDALAllRegister();
+  CPLErrorReset();
+  
+  // Setup Destination Spatial Reference
+  hSRS = OSRNewSpatialReference(NULL);
+  if (OSRSetFromUserInput (hSRS, map->grid_link->grid->srs ) == OGRERR_NONE) 
+  {
+     OSRExportToWkt(hSRS, &dstSRS);   
+  }
+  else 
+  {
+    ctx->set_error(ctx,500, "failed to parse gdal srs %s", map->grid_link->grid->srs);
+    return;
+  }
+  // free SRS
+  OSRDestroySpatialReference(hSRS);
+  
+#ifdef DEV_MODE
+   //ctx->log(ctx,MAPCACHE_NOTICE,"SRS: %s", dstSRS);
+#endif
+  
+ 
+  // Open Dataset
+  hDataset = GDALOpen( gdal->datastr, GA_ReadOnly );
+  if( hDataset == NULL ) {
+    ctx->set_error(ctx,500,"GDAL failed to open %s",gdal->datastr);
+    return;
+  }
+  
+  //----------------------------------------------------------------------------
+  // Check that there's at least one raster band
+  if ( GDALGetRasterCount(hDataset) == 0 ) {
+    ctx->set_error(ctx,500,"raster %s has no bands",gdal->datastr);
+    return;
+  }
+
+  if( GDALGetProjectionRef( hDataset ) != NULL && strlen(GDALGetProjectionRef( hDataset )) > 0 )
+    srcSRS = apr_pstrdup(ctx->pool,GDALGetProjectionRef( hDataset ));
+  else if( GDALGetGCPProjection( hDataset ) != NULL && strlen(GDALGetGCPProjection(hDataset)) > 0 && GDALGetGCPCount( hDataset ) > 1 )
+    srcSRS = apr_pstrdup(ctx->pool,GDALGetGCPProjection( hDataset ));
+
+#ifdef DEV_MODE
+  //ctx->log(ctx,MAPCACHE_NOTICE,"souce srs: %s", srcSRS);
+#endif
+  
+  GDALDriverH hDriver = GDALGetDriverByName( "MEM" );
+  GDALDatasetH hDstDS;
+  
+  //----------------------------------------------------------------------------
+  // Create a transformation object from the source to
+  // destination coordinate system.
+  void *hTransformArg = GDALCreateGenImgProjTransformer( hDataset, srcSRS,
+                                                         NULL, dstSRS,
+                                                         TRUE, 0.0, 0 );
+  if( hTransformArg == NULL ) {
+    ctx->set_error(ctx,500,"gdal failed to create SRS transformation object");
+    return;
+  }
+  
+  //----------------------------------------------------------------------------
+  // Get approximate output definition
+  int nPixels, nLines;
+  double adfDstGeoTransform[6];
+  if( GDALSuggestedWarpOutput( hDataset,
+                               GDALGenImgProjTransform, hTransformArg,
+                               adfDstGeoTransform, &nPixels, &nLines )
+      != CE_None ) {
+    ctx->set_error(ctx,500,"gdal failed to create suggested warp output");
+    return;
+  }
+  
+
+
+  GDALDestroyGenImgProjTransformer( hTransformArg );
+  double dfXRes = fabs(maxx - minx) / width;
+  double dfYRes = fabs(maxy - miny) / height;
+
+  adfDstGeoTransform[0] = minx;
+  adfDstGeoTransform[3] = maxy;
+  adfDstGeoTransform[1] = dfXRes;
+  adfDstGeoTransform[5] = -dfYRes;
+  hDstDS = GDALCreate( hDriver, "tempd_gdal_image", width, height, 4, GDT_Byte, NULL );
+  
+  //----------------------------------------------------------------------------
+  // Write out the projection definition
+
+  GDALSetProjection( hDstDS, dstSRS );
+  GDALSetGeoTransform( hDstDS, adfDstGeoTransform );
+  char               **papszWarpOptions = NULL;
+  papszWarpOptions = CSLSetNameValue( papszWarpOptions, "INIT", "0" );
+
+  //----------------------------------------------------------------------------
+  // Create a transformation object from the source to               
+  // destination coordinate system.                                  
+
+  GDALTransformerFunc pfnTransformer = NULL;
+  void               *hGenImgProjArg=NULL, *hApproxArg=NULL;
+  hTransformArg = hGenImgProjArg = GDALCreateGenImgProjTransformer( hDataset, srcSRS, hDstDS, dstSRS, TRUE, 0, 0 );
+
+  if( hTransformArg == NULL )
+    exit( 1 );
+
+  pfnTransformer = GDALGenImgProjTransform;
+
+  hTransformArg = hApproxArg = GDALCreateApproxTransformer( GDALGenImgProjTransform, hGenImgProjArg, 0.125 );
   
   
+  pfnTransformer = GDALApproxTransform;
   
+  //---------------------------------------------------------------------------
+  // Invoke the warper
+   
+  GDALSimpleImageWarp( hDataset, hDstDS, 0, NULL,
+                       pfnTransformer, hTransformArg,
+                       GDALDummyProgress, NULL, papszWarpOptions );
+
+  CSLDestroy( papszWarpOptions );
+
+  if( hApproxArg != NULL )
+    GDALDestroyApproxTransformer( hApproxArg );
+
+  if( hGenImgProjArg != NULL )
+    GDALDestroyGenImgProjTransformer( hGenImgProjArg );
+
+  if(GDALGetRasterCount(hDstDS) != 4) {
+    ctx->set_error(ctx,500,"gdal did not create a 4 band image");
+    return;
+  }
+
+  GDALRasterBandH *redband, *greenband, *blueband, *alphaband;
+
+  redband = GDALGetRasterBand(hDstDS,3);
+  greenband = GDALGetRasterBand(hDstDS,2);
+  blueband = GDALGetRasterBand(hDstDS,1);
+  alphaband = GDALGetRasterBand(hDstDS,4);
+
+  unsigned char *rasterdata = apr_palloc(ctx->pool,width*height*4);
+  data->buf = rasterdata;
+  data->avail = width*height*4;
+  data->size = width*height*4;
+
+  GDALRasterIO(redband,GF_Read,0,0,width,height,(void*)(rasterdata),width,height,GDT_Byte,4,4*width);
+  GDALRasterIO(greenband,GF_Read,0,0,width,height,(void*)(rasterdata+1),width,height,GDT_Byte,4,4*width);
+  GDALRasterIO(blueband,GF_Read,0,0,width,height,(void*)(rasterdata+2),width,height,GDT_Byte,4,4*width);
+  if(GDALGetRasterCount(hDataset)==4)
+    GDALRasterIO(alphaband,GF_Read,0,0,width,height,(void*)(rasterdata+3),width,height,GDT_Byte,4,4*width);
+  else {
+    unsigned char *alphaptr;
+    int i;
+    for(alphaptr = rasterdata+3, i=0; i<width*height; i++, alphaptr+=4) {
+      *alphaptr = 255;
+    }
+  }
+
   map->raw_image = mapcache_image_create(ctx);
+  map->raw_image->w = width;
+  map->raw_image->h = height;
+  map->raw_image->stride = width * 4;
+  map->raw_image->data = rasterdata;
+  
+  //----------------------------------------------------------------------------
+  // Close GDAL Datasets
+  GDALClose( hDstDS );
+  GDALClose( hDataset );
+  
+  //----------------------------------------------------------------------------
+  //----------------------------------------------------------------------------
+  
+  /*map->raw_image = mapcache_image_create(ctx);
   map->raw_image->w = map->width;
   map->raw_image->h = map->height;
   map->raw_image->stride = 4 * map->width;
@@ -90,7 +270,7 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
        map->raw_image->data[4*map->width*y+4*x+1] = x*y % 255;
        map->raw_image->data[4*map->width*y+4*x+2] = y % 255;
      }
-  }
+  }*/
   
   apr_pool_cleanup_register(ctx->pool, map->raw_image->data,(void*)free, apr_pool_cleanup_null);
 }

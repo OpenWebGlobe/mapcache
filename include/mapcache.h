@@ -42,11 +42,9 @@
 
 #include "errors.h"
 
-#if 0
 #ifdef USE_GDAL
 #include <gdal.h>
 #include <cpl_conv.h>
-#endif
 #endif
 
 #include <assert.h>
@@ -338,8 +336,7 @@ struct mapcache_source_gdal {
   mapcache_source source;
   char *datastr; /**< the gdal source string*/
   apr_table_t *gdal_params; /**< GDAL parameters specified in configuration */
-  //GDALDatasetH *poDataset;
-  void *poDataset;
+  GDALDatasetH *poDataset;
 };
 #endif
 /** @} */
