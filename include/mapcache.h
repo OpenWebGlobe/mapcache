@@ -96,7 +96,7 @@ typedef struct mapcache_request_get_feature_info mapcache_request_get_feature_in
 typedef struct mapcache_map mapcache_map;
 typedef struct mapcache_http_response mapcache_http_response;
 typedef struct mapcache_source_wms mapcache_source_wms;
-#if 0
+#ifdef USE_GDAL
 typedef struct mapcache_source_gdal mapcache_source_gdal;
 #endif
 typedef struct mapcache_cache_disk mapcache_cache_disk;
@@ -328,7 +328,7 @@ struct mapcache_source_dummy {
   char *mapfile;
   void *mapobj;
 };
-#if 0
+
 #ifdef USE_GDAL
 /**\class mapcache_source_gdal
  * \brief GDAL mapcache_source
@@ -338,11 +338,11 @@ struct mapcache_source_gdal {
   mapcache_source source;
   char *datastr; /**< the gdal source string*/
   apr_table_t *gdal_params; /**< GDAL parameters specified in configuration */
-  GDALDatasetH *poDataset;
+  //GDALDatasetH *poDataset;
+  void *poDataset;
 };
 #endif
 /** @} */
-#endif
 
 
 /** \defgroup cache Caches */
