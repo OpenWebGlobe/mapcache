@@ -299,8 +299,8 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
   x1 = oSrcDataset.affineTransformation_inverse[0] + dest_lrx * oSrcDataset.affineTransformation_inverse[1] + dest_lry * oSrcDataset.affineTransformation_inverse[2];
   y1 = oSrcDataset.affineTransformation_inverse[3] + dest_lrx * oSrcDataset.affineTransformation_inverse[4] + dest_lry * oSrcDataset.affineTransformation_inverse[5];
 
-  nXOff = (int)(x0+0.5);
-  nYOff = (int)(y0-0.5);
+  nXOff = (int)(x0);
+  nYOff = (int)(y0);
   nXSize = (int)(x1-x0+1);
   nYSize = (int)(y1-y0+1);
   if (nXSize<=0) nXSize = 1;
@@ -316,8 +316,8 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
   oTileDataset.lry = dest_lry;
   oTileDataset.lrx = dest_lrx;
   oTileDataset.uly = dest_uly;
-  oTileDataset.pixelwidth = fabs(oTileDataset.lrx - oTileDataset.ulx) / sourcetilewidth;
-  oTileDataset.pixelheight = fabs(oTileDataset.uly - oTileDataset.lry) / sourcetileheight;
+  oTileDataset.pixelwidth = fabs(oTileDataset.lrx - oTileDataset.ulx) / (sourcetilewidth-1);
+  oTileDataset.pixelheight = fabs(oTileDataset.uly - oTileDataset.lry) / (sourcetileheight-1);
   oTileDataset.affineTransformation[0] = dest_ulx;
   oTileDataset.affineTransformation[1] = oTileDataset.pixelwidth;
   oTileDataset.affineTransformation[2] = 0;
