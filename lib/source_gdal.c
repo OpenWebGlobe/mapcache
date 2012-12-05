@@ -34,7 +34,7 @@
 
 #ifdef USE_GDAL
 
-//#define DEV_MODE
+#define DEV_MODE
 
 #include <gdal.h>
 #include <cpl_conv.h>
@@ -48,6 +48,7 @@
 // data processing code (which is much faster than the original implementation.)
 // Created by Martin Christen, martin.christen@fhnw.ch
 // 11/30/2012
+// WARNING: This currently only works with global datasets
 //------------------------------------------------------------------------------
 
 typedef struct datasetinfo datasetinfo;
@@ -55,6 +56,95 @@ typedef struct datasetinfo datasetinfo;
 #define GM_EPSILON 2.2204460492503131e-16  
 #define GM_MIN(x,y)  ((x<y) ? x : y)
 #define GM_MAX(x,y)  ((x>y) ? x : y)
+
+//------------------------------------------------------------------------------
+// Image Buffer Tools
+inline double Floor(double x)           
+{
+  //return (T)((int)x - ((x < 0 && x != (int)(x))));
+  return (double)floor((double)x);
+}
+//---------------------------------------------------------------------------
+inline double Fract(double x)          
+{
+  return x-Floor(x);
+}
+//---------------------------------------------------------------------------
+inline double Clamp(double x, double minval, double maxval)
+{
+  return (x < minval ? minval : (x > maxval ? maxval : x));
+}
+//---------------------------------------------------------------------------
+inline void _ReadImageDataMemBGR(unsigned char* buffer, int bufferwidth, 
+                                 int bufferheight, int x, int y, 
+                                 unsigned char* r, unsigned char* g, 
+                                 unsigned char* b)
+{
+  if (x<0) x = 0;
+  if (y<0) y = 0;
+  if (x>bufferwidth-1) x = bufferwidth-1;
+  if (y>bufferheight-1) y = bufferheight-1;
+ 
+  *b = buffer[bufferwidth*3*y+3*x+2];
+  *g = buffer[bufferwidth*3*y+3*x+1];
+  *r = buffer[bufferwidth*3*y+3*x];
+}
+//------------------------------------------------------------------------------
+inline void _ReadImageValueBilinearBGR(unsigned char* buffer, int bufferwidth, 
+                                       int bufferheight, double x, double y, 
+                                       unsigned char* r, unsigned char* g, 
+                                       unsigned char* b)
+   {
+      double uf = Fract(x);
+      double vf = Fract(y);
+      int nPixelX = (int)x;
+      int nPixelY = (int)y;
+
+      int u00,v00,u10,v10,u01,v01,u11,v11;
+      u00 = nPixelX;
+      v00 = nPixelY;
+      u10 = nPixelX+1;
+      v10 = nPixelY;
+      u01 = nPixelX;
+      v01 = nPixelY+1;
+      u11 = nPixelX+1;
+      v11 = nPixelY+1;
+
+      unsigned char r00,g00,b00;
+      unsigned char r10,g10,b10;
+      unsigned char r01,g01,b01;
+      unsigned char r11,g11,b11;
+
+      _ReadImageDataMemBGR(buffer, bufferwidth, bufferheight, 
+                              u00,v00,&r00,&g00,&b00);
+      _ReadImageDataMemBGR(buffer, bufferwidth, bufferheight, 
+                              u10,v10,&r10,&g10,&b10);
+      _ReadImageDataMemBGR(buffer, bufferwidth, bufferheight, 
+                              u01,v01,&r01,&g01,&b01);
+      _ReadImageDataMemBGR(buffer, bufferwidth, bufferheight, 
+                              u11,v11,&r11,&g11,&b11);
+
+      double rd, gd, bd;
+
+      rd = (((double)r00)*(1-uf)*(1-vf)+((double)r10)*uf*(1-vf)
+               +((double)r01)*(1-uf)*vf+((double)r11)*uf*vf)+0.5;
+      gd = (((double)g00)*(1-uf)*(1-vf)+((double)g10)*uf*(1-vf)
+               +((double)g01)*(1-uf)*vf+((double)g11)*uf*vf)+0.5;
+      bd = (((double)b00)*(1-uf)*(1-vf)+((double)b10)*uf*(1-vf)
+               +((double)b01)*(1-uf)*vf+((double)b11)*uf*vf)+0.5;
+
+      rd = Clamp(rd, 0.0, 255.0);
+      gd = Clamp(gd, 0.0, 255.0);
+      bd = Clamp(bd, 0.0, 255.0);
+
+      *r = (unsigned char) rd;
+      *g = (unsigned char) gd;
+      *b = (unsigned char) bd;
+   }
+
+
+
+
 
 //------------------------------------------------------------------------------
 // dataset info encapsulates important information about the dataset
@@ -175,17 +265,17 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
   
   // Handle GeoTransform:
   GDALGetGeoTransform(hDataset, oSrcDataset.affineTransformation);
-  
-  oSrcDataset.nBands = GDALGetRasterCount(hDataset);
-  oSrcDataset.nSizeX = GDALGetRasterXSize(hDataset);
-  oSrcDataset.nSizeY = GDALGetRasterYSize(hDataset);
-  
+   
   if (!InvertGeoMatrix(oSrcDataset.affineTransformation, oSrcDataset.affineTransformation_inverse))
   {
      ctx->set_error(ctx,500,"Error: can't create inverse of affine transformation (src)");
      return;  
   }
   
+  // Setup source dataset
+  oSrcDataset.nBands = GDALGetRasterCount(hDataset);
+  oSrcDataset.nSizeX = GDALGetRasterXSize(hDataset);
+  oSrcDataset.nSizeY = GDALGetRasterYSize(hDataset);
   oSrcDataset.pixelwidth  = oSrcDataset.affineTransformation[1];
   oSrcDataset.pixelheight = oSrcDataset.affineTransformation[5];
   oSrcDataset.ulx = oSrcDataset.affineTransformation[0];
@@ -197,19 +287,19 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
   oDstDataset.nBands = 4;
   oDstDataset.nSizeX = tilewidth;
   oDstDataset.nSizeY = tileheight;
-  oDstDataset.ulx = minx;
-  oDstDataset.uly = maxy;
-  oDstDataset.lrx = maxx;
-  oDstDataset.lry = miny;
-  oDstDataset.pixelwidth = fabs(maxx - minx) / tilewidth;
-  oDstDataset.pixelheight = fabs(maxy - miny) / tileheight;
+  oDstDataset.pixelwidth = fabs(maxx - minx) / (double)(tilewidth);
+  oDstDataset.pixelheight = fabs(maxy - miny) / (double)(tileheight);
   oDstDataset.affineTransformation[0] = minx;
   oDstDataset.affineTransformation[1] = oDstDataset.pixelwidth;
   oDstDataset.affineTransformation[2] = 0;
   oDstDataset.affineTransformation[3] = maxy;
   oDstDataset.affineTransformation[4] = 0;
   oDstDataset.affineTransformation[5] = -oDstDataset.pixelheight;
-
+  oDstDataset.ulx = minx;
+  oDstDataset.uly = maxy;
+  oDstDataset.lrx = maxx;
+  oDstDataset.lry = miny;
+  
   if (!InvertGeoMatrix(oDstDataset.affineTransformation, oDstDataset.affineTransformation_inverse))
   {
      ctx->set_error(ctx,500,"Error: can't create inverse of affine transformation (dst)");
@@ -242,7 +332,6 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
   int p;
   for (p=0;p<=oDstDataset.nSizeX;p++)
   {
-    unsigned long x,y;
     double lng,lat;
     x = p;
     y = 0;
@@ -265,7 +354,6 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
   }
   for (p=0;p<=oDstDataset.nSizeY;p++)
   {
-    unsigned long x,y;
     double lng,lat; 
     x = 0;
     y = p;
@@ -286,65 +374,36 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
     dest_lrx = GM_MAX(lng, dest_lrx);
     dest_uly = GM_MAX(lat, dest_uly);
   }
-    
+  
   double x0,y0,x1,y1;
   int nXOff;   // Start pixel x
   int nYOff;   // Start pixel y
   int nXSize;  // width (number of pixels to read)
   int nYSize;  // height (number of pixels to read)
-  
+
+ 
   x0 = oSrcDataset.affineTransformation_inverse[0] + dest_ulx * oSrcDataset.affineTransformation_inverse[1] + dest_uly * oSrcDataset.affineTransformation_inverse[2];
   y0 = oSrcDataset.affineTransformation_inverse[3] + dest_ulx * oSrcDataset.affineTransformation_inverse[4] + dest_uly * oSrcDataset.affineTransformation_inverse[5];
-  
   x1 = oSrcDataset.affineTransformation_inverse[0] + dest_lrx * oSrcDataset.affineTransformation_inverse[1] + dest_lry * oSrcDataset.affineTransformation_inverse[2];
   y1 = oSrcDataset.affineTransformation_inverse[3] + dest_lrx * oSrcDataset.affineTransformation_inverse[4] + dest_lry * oSrcDataset.affineTransformation_inverse[5];
 
+
   nXOff = (int)(x0);
   nYOff = (int)(y0);
-  nXSize = (int)(x1-x0+1);
-  nYSize = (int)(y1-y0+1);
-  if (nXSize<=0) nXSize = 1;
-  if (nYSize<=0) nYSize = 1;
+  nXSize = (int)x1 - nXOff + 1;
+  nYSize = (int)y1 - nYOff + 1;
   
-  // Calculate tile size for read (this can be further optimized)
+  int sourcetilewidth;  // nXSize would be 100%
+  int sourcetileheight; // nYSize would be 100%
+  
   double aspect = (double)nXSize/(double)nYSize;
-  int sourcetilewidth = quality * GM_MAX(tilewidth, tileheight);
-  int sourcetileheight = sourcetilewidth/aspect;
+  sourcetilewidth = quality * GM_MAX(tilewidth, tileheight);
+  sourcetileheight = (int)((double)sourcetilewidth/aspect);
   
- 
-  oTileDataset.ulx = dest_ulx;
-  oTileDataset.lry = dest_lry;
-  oTileDataset.lrx = dest_lrx;
-  oTileDataset.uly = dest_uly;
-  oTileDataset.pixelwidth = fabs(oTileDataset.lrx - oTileDataset.ulx) / (sourcetilewidth-1);
-  oTileDataset.pixelheight = fabs(oTileDataset.uly - oTileDataset.lry) / (sourcetileheight-1);
-  oTileDataset.affineTransformation[0] = dest_ulx;
-  oTileDataset.affineTransformation[1] = oTileDataset.pixelwidth;
-  oTileDataset.affineTransformation[2] = 0;
-  oTileDataset.affineTransformation[3] = dest_uly;
-  oTileDataset.affineTransformation[4] = 0;
-  oTileDataset.affineTransformation[5] = -oTileDataset.pixelheight;
-  oTileDataset.nBands = 3;
-  oTileDataset.nSizeX = sourcetilewidth;
-  oTileDataset.nSizeY = sourcetileheight;
+  double scalex = (double)sourcetilewidth/(double)nXSize;
+  double scaley = (double)sourcetileheight/(double)nYSize;
   
-  if (!InvertGeoMatrix(oTileDataset.affineTransformation, oTileDataset.affineTransformation_inverse))
-  {
-     ctx->set_error(ctx,500,"Error: can't create inverse of affine transformation (tile)");
-     return;  
-  }
-  
-  
-#ifdef DEV_MODE
-  ctx->log(ctx,MAPCACHE_NOTICE,"TILE CALCULATED");
-  ctx->log(ctx,MAPCACHE_NOTICE,"dest_ulx = %10.3f", dest_ulx);
-  ctx->log(ctx,MAPCACHE_NOTICE,"dest_uly = %10.3f", dest_uly);
-  ctx->log(ctx,MAPCACHE_NOTICE,"dest_lry = %10.3f", dest_lry);
-  ctx->log(ctx,MAPCACHE_NOTICE,"dest_lrx = %10.3f", dest_lrx);
-  ctx->log(ctx,MAPCACHE_NOTICE,"(xOff,yOff)=(%i,%i); Size=(%i,%i)", nXOff, nYOff, nXSize, nYSize);
-  ctx->log(ctx,MAPCACHE_NOTICE,"Reading Tile-Size: (%i, %i)", sourcetilewidth, sourcetileheight);
-#endif
-    
+  // Retrieve data from source
   unsigned char *pData = apr_palloc(ctx->pool,sourcetilewidth*sourcetileheight*3);
   
   if (pData == NULL)
@@ -385,32 +444,44 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
      for (x=0;x<map->width;x++)
      {
         
-       double x_coord = oDstDataset.ulx + x*oDstDataset.pixelwidth;
-       double y_coord = oDstDataset.uly - y*oDstDataset.pixelheight;
+       double x_coord = oDstDataset.ulx + ((double)x)*oDstDataset.pixelwidth;
+       double y_coord = oDstDataset.uly - ((double)y)*oDstDataset.pixelheight;
        
        OCTTransform(pCTBack, 1, &x_coord, &y_coord, NULL);
+                   
+       double xx = oSrcDataset.affineTransformation_inverse[0] + x_coord * oSrcDataset.affineTransformation_inverse[1] + y_coord * oSrcDataset.affineTransformation_inverse[2];
+       double yy = oSrcDataset.affineTransformation_inverse[3] + x_coord * oSrcDataset.affineTransformation_inverse[4] + y_coord * oSrcDataset.affineTransformation_inverse[5];
        
-       x0 = oTileDataset.affineTransformation_inverse[0] + x_coord * oTileDataset.affineTransformation_inverse[1] + y_coord * oTileDataset.affineTransformation_inverse[2];
-       y0 = oTileDataset.affineTransformation_inverse[3] + x_coord * oTileDataset.affineTransformation_inverse[4] + y_coord * oTileDataset.affineTransformation_inverse[5];
- 
-       int src_x = (int)x0;
-       int src_y = (int)y0;
+       xx -= nXOff;
+       yy -= nYOff;
+       xx *= scalex;
+       yy *= scaley;
        
-       if (src_x<sourcetilewidth && src_y<sourcetileheight && src_x>=0 && src_y>=0)
-       {
-         map->raw_image->data[4*map->width*y+4*x+0] = pData[3*sourcetilewidth*src_y+3*src_x+2];
-         map->raw_image->data[4*map->width*y+4*x+1] = pData[3*sourcetilewidth*src_y+3*src_x+1];
-         map->raw_image->data[4*map->width*y+4*x+2] = pData[3*sourcetilewidth*src_y+3*src_x+0];
-         map->raw_image->data[4*map->width*y+4*x+3] = 255;
-       }
-       else
+      unsigned char r,g,b;
+      
+        /*_ReadImageValueBilinearBGR(pData, sourcetilewidth, 
+                                       sourcetileheight, xx, yy, 
+                                       &r,&g,&b);*/
+       
+       _ReadImageDataMemBGR(pData, sourcetilewidth, 
+                                       sourcetileheight, (int)(xx), (int)(yy), 
+                                       &r,&g,&b);
+       
+       map->raw_image->data[4*map->width*y+4*x+0] = b;
+       map->raw_image->data[4*map->width*y+4*x+1] = g;
+       map->raw_image->data[4*map->width*y+4*x+2] = r;
+       map->raw_image->data[4*map->width*y+4*x+3] = 255;
+       
+       /*
+       // Draw Grid:
+       if (x==0 || y==0 || x==tilewidth-1 || y==tileheight-1)
        {
          map->raw_image->data[4*map->width*y+4*x+0] = 0;
-         map->raw_image->data[4*map->width*y+4*x+1] = 0;
-         map->raw_image->data[4*map->width*y+4*x+2] = 255;
+         map->raw_image->data[4*map->width*y+4*x+1] = 255;
+         map->raw_image->data[4*map->width*y+4*x+2] = 0;
          map->raw_image->data[4*map->width*y+4*x+3] = 255;
-       }
-          
+       }*/
+       
      }
   }
   
@@ -423,238 +494,6 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
   apr_pool_cleanup_register(ctx->pool, map->raw_image->data,(void*)free, apr_pool_cleanup_null);
   
 }
-
-/*----------------------------------------------------------------------------*/
-#if 0
-/**
- * \private \memberof mapcache_source_gdal
- * \sa mapcache_source::render_map()
- */
-void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
-{
-  int x,y;
-  double minx, miny, maxx, maxy;
-  double gminx, gminy, gmaxx, gmaxy;
-  int width, height;
-  char *dstSRS;
-  char *srcSRS = "";
-  char* inputfile;
-
-  OGRSpatialReferenceH hSRS;
-  GDALDatasetH hDataset;
-  
-  mapcache_buffer *data = mapcache_buffer_create(0,ctx->pool);
-  mapcache_source_gdal *gdal = (mapcache_source_gdal*)map->tileset->source;
-  inputfile = gdal->datastr;
-  
-  // extent of tile:
-  minx = map->extent.minx;
-  miny = map->extent.miny;
-  maxx = map->extent.maxx;
-  maxy = map->extent.maxy;
-  // width of tile (pixels)
-  width = map->width;
-  // heoight of tile (pixel)
-  height = map->height;
-  
-  // extent of dataset
-  gminx = map->grid_link->grid->extent.minx;
-  gminy = map->grid_link->grid->extent.miny;
-  gmaxx = map->grid_link->grid->extent.maxx;
-  gmaxy = map->grid_link->grid->extent.maxy;
-
-#ifdef DEV_MODE
-  //ctx->log(ctx,MAPCACHE_NOTICE,"EXTENT: (%f,%f)-(%f,%f) [(%f,%f)-(%f,%f)], srs: %s",map->extent.minx,map->extent.miny,map->extent.maxx,map->extent.maxy, gminx, gminy, gmaxx, gmaxy, map->grid_link->grid->srs);
-  //ctx->log(ctx,MAPCACHE_NOTICE,"file: %s", gdal->datastr);
-  //ctx->log(ctx,MAPCACHE_NOTICE,"width: %i, height: %i", width, height);
-#endif  
-  
-  // Setup GDAL
-  GDALAllRegister();
-  CPLErrorReset();
-  
-  // Setup Destination Spatial Reference
-  hSRS = OSRNewSpatialReference(NULL);
-  if (OSRSetFromUserInput (hSRS, map->grid_link->grid->srs ) == OGRERR_NONE) 
-  {
-     OSRExportToWkt(hSRS, &dstSRS);   
-  }
-  else 
-  {
-    ctx->set_error(ctx,500, "failed to parse gdal srs %s", map->grid_link->grid->srs);
-    return;
-  }
-  // free SRS
-  OSRDestroySpatialReference(hSRS);
-  
-#ifdef DEV_MODE
-   //ctx->log(ctx,MAPCACHE_NOTICE,"SRS: %s", dstSRS);
-#endif
-  
- 
-  // Open Dataset
-  hDataset = GDALOpen( gdal->datastr, GA_ReadOnly );
-  if( hDataset == NULL ) {
-    ctx->set_error(ctx,500,"GDAL failed to open %s",gdal->datastr);
-    return;
-  }
-  
-  //----------------------------------------------------------------------------
-  // Check that there's at least one raster band
-  if ( GDALGetRasterCount(hDataset) == 0 ) {
-    ctx->set_error(ctx,500,"raster %s has no bands",gdal->datastr);
-    return;
-  }
-
-  if( GDALGetProjectionRef( hDataset ) != NULL && strlen(GDALGetProjectionRef( hDataset )) > 0 )
-    srcSRS = apr_pstrdup(ctx->pool,GDALGetProjectionRef( hDataset ));
-  else if( GDALGetGCPProjection( hDataset ) != NULL && strlen(GDALGetGCPProjection(hDataset)) > 0 && GDALGetGCPCount( hDataset ) > 1 )
-    srcSRS = apr_pstrdup(ctx->pool,GDALGetGCPProjection( hDataset ));
-
-#ifdef DEV_MODE
-  //ctx->log(ctx,MAPCACHE_NOTICE,"souce srs: %s", srcSRS);
-#endif
-  
-  GDALDriverH hDriver = GDALGetDriverByName( "MEM" );
-  GDALDatasetH hDstDS;
-  
-  //----------------------------------------------------------------------------
-  // Create a transformation object from the source to
-  // destination coordinate system.
-  void *hTransformArg = GDALCreateGenImgProjTransformer( hDataset, srcSRS,
-                                                         NULL, dstSRS,
-                                                         TRUE, 0.0, 0 );
-  if( hTransformArg == NULL ) {
-    ctx->set_error(ctx,500,"gdal failed to create SRS transformation object");
-    return;
-  }
-  
-  //----------------------------------------------------------------------------
-  // Get approximate output definition
-  int nPixels, nLines;
-  double adfDstGeoTransform[6];
-  if( GDALSuggestedWarpOutput( hDataset,
-                               GDALGenImgProjTransform, hTransformArg,
-                               adfDstGeoTransform, &nPixels, &nLines )
-      != CE_None ) {
-    ctx->set_error(ctx,500,"gdal failed to create suggested warp output");
-    return;
-  }
-  
-  GDALDestroyGenImgProjTransformer( hTransformArg );
-  double dfXRes = fabs(maxx - minx) / width;
-  double dfYRes = fabs(maxy - miny) / height;
-
-  adfDstGeoTransform[0] = minx;
-  adfDstGeoTransform[3] = maxy;
-  adfDstGeoTransform[1] = dfXRes;
-  adfDstGeoTransform[5] = -dfYRes;
-  hDstDS = GDALCreate( hDriver, "tempd_gdal_image", width, height, 4, GDT_Byte, NULL );
-  
-  //----------------------------------------------------------------------------
-  // Write out the projection definition
-
-  GDALSetProjection( hDstDS, dstSRS );
-  GDALSetGeoTransform( hDstDS, adfDstGeoTransform );
-  char               **papszWarpOptions = NULL;
-  papszWarpOptions = CSLSetNameValue( papszWarpOptions, "INIT", "0" );
-
-  //----------------------------------------------------------------------------
-  // Create a transformation object from the source to               
-  // destination coordinate system.                                  
-
-  GDALTransformerFunc pfnTransformer = NULL;
-  void               *hGenImgProjArg=NULL, *hApproxArg=NULL;
-  hTransformArg = hGenImgProjArg = GDALCreateGenImgProjTransformer( hDataset, srcSRS, hDstDS, dstSRS, TRUE, 0, 0 );
-
-  if( hTransformArg == NULL )
-    exit( 1 );
-
-  pfnTransformer = GDALGenImgProjTransform;
-
-  hTransformArg = hApproxArg = GDALCreateApproxTransformer( GDALGenImgProjTransform, hGenImgProjArg, 0.125 );
-  
-  
-  pfnTransformer = GDALApproxTransform;
-  
-  //---------------------------------------------------------------------------
-  // Invoke the warper
-   
-  GDALSimpleImageWarp( hDataset, hDstDS, 0, NULL,
-                       pfnTransformer, hTransformArg,
-                       GDALDummyProgress, NULL, papszWarpOptions );
-
-  CSLDestroy( papszWarpOptions );
-
-  if( hApproxArg != NULL )
-    GDALDestroyApproxTransformer( hApproxArg );
-
-  if( hGenImgProjArg != NULL )
-    GDALDestroyGenImgProjTransformer( hGenImgProjArg );
-
-  if(GDALGetRasterCount(hDstDS) != 4) {
-    ctx->set_error(ctx,500,"gdal did not create a 4 band image");
-    return;
-  }
-
-  GDALRasterBandH *redband, *greenband, *blueband, *alphaband;
-
-  redband = GDALGetRasterBand(hDstDS,3);
-  greenband = GDALGetRasterBand(hDstDS,2);
-  blueband = GDALGetRasterBand(hDstDS,1);
-  alphaband = GDALGetRasterBand(hDstDS,4);
-
-  unsigned char *rasterdata = apr_palloc(ctx->pool,width*height*4);
-  data->buf = rasterdata;
-  data->avail = width*height*4;
-  data->size = width*height*4;
-
-  GDALRasterIO(redband,GF_Read,0,0,width,height,(void*)(rasterdata),width,height,GDT_Byte,4,4*width);
-  GDALRasterIO(greenband,GF_Read,0,0,width,height,(void*)(rasterdata+1),width,height,GDT_Byte,4,4*width);
-  GDALRasterIO(blueband,GF_Read,0,0,width,height,(void*)(rasterdata+2),width,height,GDT_Byte,4,4*width);
-  if(GDALGetRasterCount(hDataset)==4)
-    GDALRasterIO(alphaband,GF_Read,0,0,width,height,(void*)(rasterdata+3),width,height,GDT_Byte,4,4*width);
-  else {
-    unsigned char *alphaptr;
-    int i;
-    for(alphaptr = rasterdata+3, i=0; i<width*height; i++, alphaptr+=4) {
-      *alphaptr = 255;
-    }
-  }
-
-  map->raw_image = mapcache_image_create(ctx);
-  map->raw_image->w = width;
-  map->raw_image->h = height;
-  map->raw_image->stride = width * 4;
-  map->raw_image->data = rasterdata;
-  
-  //----------------------------------------------------------------------------
-  // Close GDAL Datasets
-  GDALClose( hDstDS );
-  GDALClose( hDataset );
-  
-  //----------------------------------------------------------------------------
-  //----------------------------------------------------------------------------
-  
-  /*map->raw_image = mapcache_image_create(ctx);
-  map->raw_image->w = map->width;
-  map->raw_image->h = map->height;
-  map->raw_image->stride = 4 * map->width;
-  map->raw_image->data = malloc(map->width*map->height*4);
-  
-  for (y=0;y<map->height;y++)
-  {
-     for (x=0;x<map->width;x++)
-     {
-       map->raw_image->data[4*map->width*y+4*x+0] = x % 255;
-       map->raw_image->data[4*map->width*y+4*x+1] = x*y % 255;
-       map->raw_image->data[4*map->width*y+4*x+2] = y % 255;
-     }
-  }*/
-  
-  apr_pool_cleanup_register(ctx->pool, map->raw_image->data,(void*)free, apr_pool_cleanup_null);
-}
-#endif
 /*----------------------------------------------------------------------------*/
 void _mapcache_source_gdal_query(mapcache_context *ctx, mapcache_feature_info *fi)
 {
