@@ -335,8 +335,10 @@ struct mapcache_source_dummy {
 struct mapcache_source_gdal {
   mapcache_source source;
   char *datastr; /**< the gdal source string*/
-  apr_table_t *gdal_params; /**< GDAL parameters specified in configuration */
+  char *srs; /**< spatial reference (optional)*/ 
+  //apr_table_t *gdal_params; /**< GDAL parameters specified in configuration */
   GDALDatasetH *poDataset;
+  mapcache_extent* extent; /**< bounding box of dataset (optional)*/
 };
 #endif
 /** @} */
