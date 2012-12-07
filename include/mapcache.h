@@ -111,6 +111,7 @@ typedef struct mapcache_request_get_capabilities_wmts mapcache_request_get_capab
 typedef struct mapcache_forwarding_rule mapcache_forwarding_rule;
 typedef struct mapcache_request_get_capabilities_tms mapcache_request_get_capabilities_tms;
 typedef struct mapcache_request_get_capabilities_kml mapcache_request_get_capabilities_kml;
+typedef struct mapcache_request_get_capabilities_owg mapcache_request_get_capabilities_owg;
 
 typedef struct mapcache_request_get_tile mapcache_request_get_tile;
 typedef struct mapcache_request_get_map mapcache_request_get_map;
@@ -122,6 +123,7 @@ typedef struct mapcache_service_ve mapcache_service_ve;
 typedef struct mapcache_service_tms mapcache_service_tms;
 typedef struct mapcache_service_kml mapcache_service_kml;
 typedef struct mapcache_service_demo mapcache_service_demo;
+typedef struct mapcache_service_owg mapcache_service_owg;
 typedef struct mapcache_server_cfg mapcache_server_cfg;
 typedef struct mapcache_image mapcache_image;
 typedef struct mapcache_grid mapcache_grid;
@@ -630,6 +632,12 @@ struct mapcache_request_get_capabilities_wmts {
   mapcache_request_get_capabilities request;
 };
 
+struct mapcache_request_get_capabilities_owg {
+  mapcache_request_get_capabilities request;
+  mapcache_tileset *tileset;
+  mapcache_grid_link *grid_link;
+};
+
 /**
  * the capabilities request for a specific service, to be able to create
  * demo pages specific to a given service
@@ -659,12 +667,13 @@ struct mapcache_forwarding_rule {
 /** \defgroup services Services*/
 /** @{ */
 
-#define MAPCACHE_SERVICES_COUNT 7
+#define MAPCACHE_SERVICES_COUNT 8
 
 typedef enum {
   MAPCACHE_SERVICE_TMS=0, MAPCACHE_SERVICE_WMTS,
   MAPCACHE_SERVICE_DEMO, MAPCACHE_SERVICE_GMAPS, MAPCACHE_SERVICE_KML,
-  MAPCACHE_SERVICE_VE, MAPCACHE_SERVICE_WMS
+  MAPCACHE_SERVICE_VE, MAPCACHE_SERVICE_OWG,
+  MAPCACHE_SERVICE_WMS // WMS should be last to prevent conflicts..
 } mapcache_service_type;
 
 #define MAPCACHE_UNITS_COUNT 3
@@ -764,6 +773,14 @@ struct mapcache_service_ve {
   mapcache_service service;
 };
 
+/**\class mapcache_service_owg
+ * \brief OpenWebGlobe service for image data
+ * \implements mapcache_service
+ */
+struct mapcache_service_owg {
+  mapcache_service service;
+};
+
 /**
  * \brief create and initialize a mapcache_service_wms
  * \memberof mapcache_service_wms
@@ -805,6 +822,12 @@ mapcache_service* mapcache_service_wmts_create(mapcache_context *ctx);
  * \memberof mapcache_service_demo
  */
 mapcache_service* mapcache_service_demo_create(mapcache_context *ctx);
+
+/**
+ * \brief create and initialize a mapcache_service_owg
+ * \memberof mapcache_service_owg
+ */
+mapcache_service* mapcache_service_owg_create(mapcache_context *ctx);
 
 /**
  * \brief return the request that corresponds to the given url

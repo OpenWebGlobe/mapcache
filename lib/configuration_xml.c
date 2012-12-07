@@ -812,6 +812,11 @@ void parseServices(mapcache_context *ctx, ezxml_t root, mapcache_cfg *config)
         config->services[MAPCACHE_SERVICE_WMS] = mapcache_service_wms_create(ctx);
     }
   }
+  if ((node = ezxml_child(root,"owg")) != NULL) {
+    if(!node->txt || !*node->txt || strcmp(node->txt, "false")) {
+      config->services[MAPCACHE_SERVICE_OWG] = mapcache_service_owg_create(ctx);
+    }
+  }
 
   if(!config->services[MAPCACHE_SERVICE_WMS] &&
       !config->services[MAPCACHE_SERVICE_TMS] &&
@@ -931,6 +936,12 @@ void mapcache_configuration_parse_xml(mapcache_context *ctx, const char *filenam
             new_service->configuration_parse_xml(ctx,service_node,new_service,config);
           }
           config->services[MAPCACHE_SERVICE_VE] = new_service;
+        } else if (!strcasecmp(type,"owg")) {
+          mapcache_service *new_service = mapcache_service_owg_create(ctx);
+          if(new_service->configuration_parse_xml) {
+            new_service->configuration_parse_xml(ctx,service_node,new_service,config);
+          }
+          config->services[MAPCACHE_SERVICE_OWG] = new_service;
         } else if (!strcasecmp(type,"demo")) {
           mapcache_service *new_service = mapcache_service_demo_create(ctx);
           if(new_service->configuration_parse_xml) {
@@ -950,7 +961,6 @@ void mapcache_configuration_parse_xml(mapcache_context *ctx, const char *filenam
     ctx->set_error(ctx, 400, "no <services> configured");
   }
   if(GC_HAS_ERROR(ctx)) goto cleanup;
-
 
   node = ezxml_child(doc,"default_format");
   if(!node)
