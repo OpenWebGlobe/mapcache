@@ -1,13 +1,18 @@
 include ../Makefile.inc
 top_builddir = @top_builddir@
 
-all: mapcache_seed
+all: mapcache_seed mapcache_calcextent
 
 mapcache_seed: mapcache_seed.c ../lib/libmapcache.la
 	$(LIBTOOL) --mode=link --tag CC $(CC) -rpath $(bindir) -o mapcache_seed $(ALL_ENABLED) $(CFLAGS) $(INCLUDES) $(SEEDER_EXTRAINC) mapcache_seed.c ../lib/libmapcache.la $(LIBS) $(SEEDER_EXTRALIBS)
 
+mapcache_calcextent: mapcache_calcextent.c ../lib/libmapcache.la
+	$(LIBTOOL) --mode=link --tag CC $(CC) -rpath $(bindir) -o mapcache_calcextent $(ALL_ENABLED) $(CFLAGS) $(INCLUDES) mapcache_calcextent.c ../lib/libmapcache.la $(LIBS)
+	
 install: mapcache_seed
 	$(LIBTOOL) --mode=install $(INSTALL) mapcache_seed $(bindir)
+	mapcache_calcextent
+	$(LIBTOOL) --mode=install $(INSTALL) mapcache_calcextent $(bindir)
 
 clean:
 	rm -f *.o
@@ -19,4 +24,5 @@ clean:
 	rm -f *.sla
 	rm -rf *.dSYM
 	rm -f mapcache_seed
+	rm -f mapcache_calcextent
 
