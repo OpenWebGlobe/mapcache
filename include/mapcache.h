@@ -636,6 +636,7 @@ struct mapcache_request_get_capabilities_owg {
   mapcache_request_get_capabilities request;
   mapcache_tileset *tileset;
   mapcache_grid_link *grid_link;
+  const char* layer;
 };
 
 /**

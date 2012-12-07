@@ -40,15 +40,27 @@ void _create_capabilities_owg(mapcache_context *ctx, mapcache_request_get_capabi
   mapcache_request_get_capabilities_owg *request = (mapcache_request_get_capabilities_owg*)req;
   
   request->request.mime_type = apr_pstrdup(ctx->pool,"application/json");
-  // todo: generate real OpenWebGlobe JSON (instead of this static template)
-  const unsigned char* result = "\
+  
+  // todo: use real data
+   const char* name = request->layer;
+   const char* type = "image";
+   const char* format = "jpg";
+   int minlod = request->grid_link->minz+1;
+   int maxlod = request->grid_link->maxz;
+   int x0 = request->grid_link->grid_limits[maxlod-1].minx;
+   int y0 = request->grid_link->grid_limits[maxlod-1].miny;
+   int x1 = request->grid_link->grid_limits[maxlod-1].maxx;
+   int y1 = request->grid_link->grid_limits[maxlod-1].maxy;
+   
+   char* result = apr_psprintf(ctx->pool, "\
 {\
-   \"name\" : \"bluemarble\",\n \
-   \"type\" : \"image\",\n \
-   \"format\" : \"jpg\",\n \
-   \"maxlod\" : 8,\n \
-   \"extent\" : [0, 0, 255, 255]\n \
-}\n";
+   \"name\" : \"%s\",\n \
+   \"type\" : \"%s\",\n \
+   \"format\" : \"%s\",\n \
+   \"minlod\" : %i,\n \
+   \"maxlod\" : %i,\n \
+   \"extent\" : [%i, %i, %i, %i]\n \
+}\n", name, type, format, minlod, maxlod, x0, y0, x1, y1); 
 
   request->request.capabilities = apr_pstrdup(ctx->pool,result);
 }
@@ -70,44 +82,131 @@ void _mapcache_service_owg_parse_request(mapcache_context *ctx, mapcache_service
   int x=-1,y=-1,z=-1;
   
   // Example:
-  // http://domain.com/mapcache/owg/layername/tiles/1/0/0.jpg
-  // http://domain.com/mapcache/owg/layername/layersettings.json
+  // http://domain.com/mapcache/owg/tileset@grid/tiles/1/0/0.jpg
+  // http://domain.com/mapcache/owg/bluemarble;landsat@world/layersettings.json
+  // http://localhost/mapcache/owg/landsat@world/layersettings.json
+  char* path = apr_pstrdup(ctx->pool, cpathinfo);
  
-  if (0 == strcmp(cpathinfo,"/layersettings.json"))
-  {
-    mapcache_request_get_capabilities_owg *req = (mapcache_request_get_capabilities_owg*)apr_pcalloc(
-        ctx->pool,sizeof(mapcache_request_get_capabilities_owg));
-    req->request.request.type = MAPCACHE_REQUEST_GET_CAPABILITIES;
-    if(index >= 2) 
-    {
-      req->tileset = tileset;
-      req->grid_link = grid_link;
-    }       
-    *request = (mapcache_request*)req;
-    return;
-  }
- 
+  char* next;
+  char* layer = apr_strtok(path,"/",&next);
+  char* json = apr_strtok(NULL,"/",&next);
   
+  if (layer && json)
+  {    
+    if (0 == strcmp(json,"layersettings.json"))
+    {
+      //--------------------------------------------------------------------------
+      char *gridname;
+      mapcache_request_get_tile *req = (mapcache_request_get_tile*)apr_pcalloc(ctx->pool,sizeof(mapcache_request_get_tile));
+      req->request.type = MAPCACHE_REQUEST_GET_TILE;
+      gridname = layer;  /*hijack the char* pointer while counting the number of commas */
+      while(*gridname) 
+      {
+        if(*gridname == ';') req->ntiles++;
+        gridname++;
+      }
+      req->tiles = (mapcache_tile**)apr_pcalloc(ctx->pool,(req->ntiles+1) * sizeof(mapcache_tile*));
+
+      /* reset the hijacked variables back to default value */
+      gridname = NULL;
+      req->ntiles = 0;
+
+      for (key = apr_strtok(layer, ";", &last); key != NULL;
+           key = apr_strtok(NULL, ";", &last)) 
+      {
+        tileset = mapcache_configuration_get_tileset(config,key);
+        if(!tileset) 
+        {
+          /*tileset not found directly, test if it was given as "name@grid" notation*/
+          char *tname = apr_pstrdup(ctx->pool,key);
+          char *gname = tname;
+          int i;
+          while(*gname) 
+          {
+            if(*gname == '@') 
+            {
+              *gname = '\0';
+              gname++;
+              break;
+            }
+            gname++;
+          }
+          if(!gname) 
+          {
+            ctx->set_error(ctx,404, "received owg request with invalid layer %s", key);
+            return;
+          }
+          tileset = mapcache_configuration_get_tileset(config,tname);
+          if(!tileset) 
+          {
+            ctx->set_error(ctx,404, "received owg request with invalid layer %s", tname);
+            return;
+          }
+          for(i=0; i<tileset->grid_links->nelts; i++) 
+          {
+            mapcache_grid_link *sgrid = APR_ARRAY_IDX(tileset->grid_links,i,mapcache_grid_link*);
+            if(!strcmp(sgrid->grid->name,gname)) 
+            {
+              grid_link = sgrid;
+              break;
+            }
+          }
+          if(!grid_link) 
+          {
+            ctx->set_error(ctx,404, "received owg request with invalid grid %s", gname);
+            return;
+          }
+        } 
+        else 
+        {
+          grid_link = APR_ARRAY_IDX(tileset->grid_links,0,mapcache_grid_link*);
+        }
+        if(!gridname)
+        {
+          gridname = grid_link->grid->name;
+        } 
+        else 
+        {
+          if(strcmp(gridname,grid_link->grid->name)) 
+          {
+            ctx->set_error(ctx,400,"received owg request with conflicting grids %s and %s",
+                           gridname,grid_link->grid->name);
+            return;
+          }
+        }
+      }
+      //--------------------------------------------------------------------------
+    
+      mapcache_request_get_capabilities_owg *capreq = (mapcache_request_get_capabilities_owg*)apr_pcalloc(
+          ctx->pool,sizeof(mapcache_request_get_capabilities_owg));
+      capreq->request.request.type = MAPCACHE_REQUEST_GET_CAPABILITIES;
+      capreq->tileset = tileset;
+      capreq->grid_link = grid_link;
+      capreq->layer = apr_pstrdup(ctx->pool,layer);
+             
+      *request = (mapcache_request*)capreq;
+      return;
+    }
+  }
 
   if(cpathinfo) 
   {
     pathinfo = apr_pstrdup(ctx->pool,cpathinfo);
-    /* parse a path_info like /1.0.0/global_mosaic/0/0/0.jpg */
-    for (key = apr_strtok(pathinfo, "/", &last); key != NULL;
-         key = apr_strtok(NULL, "/", &last)) 
+    /* parse a path_info like /tileset@grid/tiles/1/0/0.jpg */
+    for (key = apr_strtok(pathinfo, "/", &last); key != NULL; key = apr_strtok(NULL, "/", &last)) 
     {
       if(!*key) continue; /* skip an empty string, could happen if the url contains // */
       switch(++index) {
-        case 1: /* version */
-          if(strcmp("1.0.0",key)) 
-          {
-            ctx->set_error(ctx,404, "received owg request with invalid version %s", key);
-            return;
-          }
-          break;
-        case 2: /* layer name */
+        case 1: /* layer name */
           sTileset = apr_pstrdup(ctx->pool,key);
           break;
+        case 2: /* tiles */
+          if(strcmp("tiles",key)) 
+          {
+            ctx->set_error(ctx,404, "received owg request with invalid tile path %s", key);
+            return;
+          }
+          break; 
         case 3:
           z = (int)strtol(key,&endptr,10);
           if(*endptr != 0) 
@@ -138,6 +237,7 @@ void _mapcache_service_owg_parse_request(mapcache_context *ctx, mapcache_service
       }
     }
   }
+  
   if(index == 5) 
   {
     char *gridname;
@@ -253,7 +353,7 @@ void _mapcache_service_owg_parse_request(mapcache_context *ctx, mapcache_service
   } 
   else 
   {
-    ctx->set_error(ctx,404, "received request with wrong number of arguments", pathinfo);
+    ctx->set_error(ctx,404, "received request with wrong number of arguments");
     return;
   }
 }
