@@ -9,9 +9,8 @@ mapcache_seed: mapcache_seed.c ../lib/libmapcache.la
 mapcache_calcextent: mapcache_calcextent.c ../lib/libmapcache.la
 	$(LIBTOOL) --mode=link --tag CC $(CC) -rpath $(bindir) -o mapcache_calcextent $(ALL_ENABLED) $(CFLAGS) $(INCLUDES) mapcache_calcextent.c ../lib/libmapcache.la $(LIBS)
 	
-install: mapcache_seed
+install: mapcache_seed mapcache_calcextent
 	$(LIBTOOL) --mode=install $(INSTALL) mapcache_seed $(bindir)
-	mapcache_calcextent
 	$(LIBTOOL) --mode=install $(INSTALL) mapcache_calcextent $(bindir)
 
 clean:
