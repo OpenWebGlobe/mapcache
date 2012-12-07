@@ -41,6 +41,7 @@
 #include "cpl_string.h"
 #include "ogr_srs_api.h"
 
+
 //------------------------------------------------------------------------------
 // This is an optimized dataset transformation based on OpenWebGlobe 
 // data processing code (which is much faster than the original implementation.)
@@ -200,8 +201,9 @@ int InvertGeoMatrix(double* mGeoMatrix, double* mInvGeoMatrix)
  */
 void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
 {
-  int x,y;
   double minx, miny, maxx, maxy;
+  double minx_data_wgs84, miny_data_wgs84, maxx_data_wgs84, maxy_data_wgs84;
+
   //double gminx, gminy, gmaxx, gmaxy;
   int tilewidth, tileheight;
   char *dstSRS;
@@ -212,11 +214,13 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
   
   OGRCoordinateTransformationH pCT;
   OGRCoordinateTransformationH pCTBack;
+  OGRCoordinateTransformationH pCTWGS84 = NULL;
   
   double quality = 2.0;
   
   OGRSpatialReferenceH srcref;
   OGRSpatialReferenceH dstref;
+  OGRSpatialReferenceH wgs84ref = NULL;
   GDALDatasetH hDataset;
   
   mapcache_buffer *data = mapcache_buffer_create(0,ctx->pool);
@@ -233,12 +237,6 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
   // heoight of tile (pixel)
   tileheight = map->height;
   
-  
-  if (gdal->extent != NULL)
-  {
-      // gdal->extent->minx;
-   
-  }
  
   // Setup GDAL
   GDALAllRegister();
@@ -283,6 +281,16 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
   {
      ctx->set_error(ctx,500,"Error: can't create spatial reference of source");
      return; 
+  }
+  
+  if (gdal->extent != NULL)
+  {
+    wgs84ref = OSRNewSpatialReference(NULL);
+    if (OSRImportFromEPSG(wgs84ref, 4326) != OGRERR_NONE)
+    {
+      ctx->set_error(ctx,500,"Error: can't create spatial reference for WGS84");
+      return; 
+    }
   }
   
   // Handle GeoTransform:
@@ -333,6 +341,15 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
   // Create Coordinate transformation:
   pCT        = OCTNewCoordinateTransformation(srcref, dstref);
   pCTBack    = OCTNewCoordinateTransformation(dstref, srcref);
+  if (gdal->extent != NULL)
+  {
+    pCTWGS84   = OCTNewCoordinateTransformation(dstref, wgs84ref);
+    if (!pCTWGS84)
+    {
+      ctx->set_error(ctx,500,"Error: can't create transformation to WGS84");
+      return;  
+    }
+  }
   
   if (!pCT)
   {
@@ -346,6 +363,17 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
    return;  
   }
   
+  
+  // warning: this is not always valid. For now this is restricted
+  // to projections like mercator -> wgs84.
+  // only use the "extent" tag for such datasets.
+  if (gdal->extent != NULL)
+  {
+    minx_data_wgs84 = gdal->extent->minx;
+    miny_data_wgs84 = gdal->extent->miny;
+    maxx_data_wgs84 = gdal->extent->maxx;
+    maxy_data_wgs84 = gdal->extent->maxy;
+  }
   // Rectangle within source required for tile
   double dest_ulx = 1e20;
   double dest_lry = 1e20;
@@ -356,54 +384,56 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
   int p;
   for (p=0;p<=oDstDataset.nSizeX;p++)
   {
-    double lng,lat;
+    double x_tile,y_tile;
+    int x,y;
     x = p;
     y = 0;
-    lat = oDstDataset.affineTransformation[3] + x*oDstDataset.affineTransformation[4] + y*oDstDataset.affineTransformation[5];
-    lng = oDstDataset.affineTransformation[0] + x*oDstDataset.affineTransformation[1] + y*oDstDataset.affineTransformation[2];
-    if (OCTTransform(pCTBack, 1, &lng, &lat, NULL))
+    y_tile = oDstDataset.affineTransformation[3] + x*oDstDataset.affineTransformation[4] + y*oDstDataset.affineTransformation[5];
+    x_tile = oDstDataset.affineTransformation[0] + x*oDstDataset.affineTransformation[1] + y*oDstDataset.affineTransformation[2];
+    if (OCTTransform(pCTBack, 1, &x_tile, &y_tile, NULL))
     { 
-      dest_ulx = GM_MIN(lng, dest_ulx);
-      dest_lry = GM_MIN(lat, dest_lry);
-      dest_lrx = GM_MAX(lng, dest_lrx);
-      dest_uly = GM_MAX(lat, dest_uly);
+      dest_ulx = GM_MIN(x_tile, dest_ulx);
+      dest_lry = GM_MIN(y_tile, dest_lry);
+      dest_lrx = GM_MAX(x_tile, dest_lrx);
+      dest_uly = GM_MAX(y_tile, dest_uly);
     }
     x = p;
     y = oDstDataset.nSizeY;
-    lat = oDstDataset.affineTransformation[3] + x*oDstDataset.affineTransformation[4] + y*oDstDataset.affineTransformation[5];
-    lng = oDstDataset.affineTransformation[0] + x*oDstDataset.affineTransformation[1] + y*oDstDataset.affineTransformation[2];
-    if (OCTTransform(pCTBack, 1, &lng, &lat, NULL))
+    y_tile = oDstDataset.affineTransformation[3] + x*oDstDataset.affineTransformation[4] + y*oDstDataset.affineTransformation[5];
+    x_tile = oDstDataset.affineTransformation[0] + x*oDstDataset.affineTransformation[1] + y*oDstDataset.affineTransformation[2];
+    if (OCTTransform(pCTBack, 1, &x_tile, &y_tile, NULL))
     {
-      dest_ulx = GM_MIN(lng, dest_ulx);
-      dest_lry = GM_MIN(lat, dest_lry);
-      dest_lrx = GM_MAX(lng, dest_lrx);
-      dest_uly = GM_MAX(lat, dest_uly);
+      dest_ulx = GM_MIN(x_tile, dest_ulx);
+      dest_lry = GM_MIN(y_tile, dest_lry);
+      dest_lrx = GM_MAX(x_tile, dest_lrx);
+      dest_uly = GM_MAX(y_tile, dest_uly);
     }
   }
   for (p=0;p<=oDstDataset.nSizeY;p++)
   {
-    double lng,lat; 
+    double x_tile,y_tile;
+    int x,y;
     x = 0;
     y = p;
-    lat = oDstDataset.affineTransformation[3] + x*oDstDataset.affineTransformation[4] + y*oDstDataset.affineTransformation[5];
-    lng = oDstDataset.affineTransformation[0] + x*oDstDataset.affineTransformation[1] + y*oDstDataset.affineTransformation[2];
-    if (OCTTransform(pCTBack, 1, &lng, &lat, NULL))
+    y_tile = oDstDataset.affineTransformation[3] + x*oDstDataset.affineTransformation[4] + y*oDstDataset.affineTransformation[5];
+    x_tile = oDstDataset.affineTransformation[0] + x*oDstDataset.affineTransformation[1] + y*oDstDataset.affineTransformation[2];
+    if (OCTTransform(pCTBack, 1, &x_tile, &y_tile, NULL))
     {
-      dest_ulx = GM_MIN(lng, dest_ulx);
-      dest_lry = GM_MIN(lat, dest_lry);
-      dest_lrx = GM_MAX(lng, dest_lrx);
-      dest_uly = GM_MAX(lat, dest_uly);
+      dest_ulx = GM_MIN(x_tile, dest_ulx);
+      dest_lry = GM_MIN(y_tile, dest_lry);
+      dest_lrx = GM_MAX(x_tile, dest_lrx);
+      dest_uly = GM_MAX(y_tile, dest_uly);
     }
     x = oDstDataset.nSizeX;
     y = p;
-    lat = oDstDataset.affineTransformation[3] + x*oDstDataset.affineTransformation[4] + y*oDstDataset.affineTransformation[5];
-    lng = oDstDataset.affineTransformation[0] + x*oDstDataset.affineTransformation[1] + y*oDstDataset.affineTransformation[2];
-    if (OCTTransform(pCTBack, 1, &lng, &lat, NULL))
+    y_tile = oDstDataset.affineTransformation[3] + x*oDstDataset.affineTransformation[4] + y*oDstDataset.affineTransformation[5];
+    x_tile = oDstDataset.affineTransformation[0] + x*oDstDataset.affineTransformation[1] + y*oDstDataset.affineTransformation[2];
+    if (OCTTransform(pCTBack, 1, &x_tile, &y_tile, NULL))
     {
-      dest_ulx = GM_MIN(lng, dest_ulx);
-      dest_lry = GM_MIN(lat, dest_lry);
-      dest_lrx = GM_MAX(lng, dest_lrx);
-      dest_uly = GM_MAX(lat, dest_uly);
+      dest_ulx = GM_MIN(x_tile, dest_ulx);
+      dest_lry = GM_MIN(y_tile, dest_lry);
+      dest_lrx = GM_MAX(x_tile, dest_lrx);
+      dest_uly = GM_MAX(y_tile, dest_uly);
     }
   }
     
@@ -415,18 +445,7 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
     map->raw_image->h = map->height;
     map->raw_image->stride = 4 * map->width;
     map->raw_image->data = malloc(map->width*map->height*4);
-    
-    for (y=0;y<map->height;y++)
-    {
-      for (x=0;x<map->width;x++)
-      {
-        map->raw_image->data[4*map->width*y+4*x+0] = 0;
-        map->raw_image->data[4*map->width*y+4*x+1] = 0;
-        map->raw_image->data[4*map->width*y+4*x+2] = 255;
-        map->raw_image->data[4*map->width*y+4*x+3] = 255;
-      }
-    }
-    
+    memset(map->raw_image->data, 0, map->width*map->height*4);
     apr_pool_cleanup_register(ctx->pool, map->raw_image->data,(void*)free, apr_pool_cleanup_null);
     
     OCTDestroyCoordinateTransformation(pCT);   
@@ -447,7 +466,6 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
   y0 = oSrcDataset.affineTransformation_inverse[3] + dest_ulx * oSrcDataset.affineTransformation_inverse[4] + dest_uly * oSrcDataset.affineTransformation_inverse[5];
   x1 = oSrcDataset.affineTransformation_inverse[0] + dest_lrx * oSrcDataset.affineTransformation_inverse[1] + dest_lry * oSrcDataset.affineTransformation_inverse[2];
   y1 = oSrcDataset.affineTransformation_inverse[3] + dest_lrx * oSrcDataset.affineTransformation_inverse[4] + dest_lry * oSrcDataset.affineTransformation_inverse[5];
-
 
   nXOff = (int)(x0);
   nYOff = (int)(y0);
@@ -478,19 +496,7 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
     map->raw_image->h = map->height;
     map->raw_image->stride = 4 * map->width;
     map->raw_image->data = malloc(map->width*map->height*4);
-    //memset(map->raw_image->data, 0, map->width*map->height*4);
-    
-    for (y=0;y<map->height;y++)
-    {
-      for (x=0;x<map->width;x++)
-      {
-        map->raw_image->data[4*map->width*y+4*x+0] = 0;
-        map->raw_image->data[4*map->width*y+4*x+1] = 255;
-        map->raw_image->data[4*map->width*y+4*x+2] = 0;
-        map->raw_image->data[4*map->width*y+4*x+3] = 255;
-      }
-    }
-    
+    memset(map->raw_image->data, 0, map->width*map->height*4);
     apr_pool_cleanup_register(ctx->pool, map->raw_image->data,(void*)free, apr_pool_cleanup_null);
     
     OCTDestroyCoordinateTransformation(pCT);   
@@ -555,36 +561,69 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
   map->raw_image->h = map->height;
   map->raw_image->stride = 4 * map->width;
   map->raw_image->data = malloc(map->width*map->height*4);
-  
+  int x,y;
   for (y=0;y<map->height;y++)
   {
      for (x=0;x<map->width;x++)
      {
-        
+       unsigned char r,g,b,a; 
        double x_coord = oDstDataset.ulx + ((double)x)*oDstDataset.pixelwidth;
        double y_coord = oDstDataset.uly - ((double)y)*oDstDataset.pixelheight;
        
-       OCTTransform(pCTBack, 1, &x_coord, &y_coord, NULL);
-                   
-       double xx = oSrcDataset.affineTransformation_inverse[0] + x_coord * oSrcDataset.affineTransformation_inverse[1] + y_coord * oSrcDataset.affineTransformation_inverse[2];
-       double yy = oSrcDataset.affineTransformation_inverse[3] + x_coord * oSrcDataset.affineTransformation_inverse[4] + y_coord * oSrcDataset.affineTransformation_inverse[5];
-       
-       xx -= nXOff;
-       yy -= nYOff;
-       xx *= scalex;
-       yy *= scaley;
-       
-      unsigned char r,g,b,a;
-       
-       _ReadImageDataMemBGR(pData, sourcetilewidth, 
-                                       sourcetileheight, (int)(xx), (int)(yy), 
-                                       &r,&g,&b,&a);
+       // note: non-global datasets may have too large numbers (overflow) to
+       //       process on a global system. Therefore this additional check is
+       //       implemented
+       if (gdal->extent != NULL)
+       {
+            double x_wgs84 = x_coord;
+            double y_wgs84 = y_coord;
+            OCTTransform(pCTWGS84, 1, &x_wgs84, &y_wgs84, NULL);
+            
+            if (x_wgs84>=minx_data_wgs84 &&
+                x_wgs84<=maxx_data_wgs84 &&
+                y_wgs84>=miny_data_wgs84 &&
+                y_wgs84<=maxy_data_wgs84)
+            {
+              // pixel will be inside dataset!
+              OCTTransform(pCTBack, 1, &x_coord, &y_coord, NULL);            
+              double xx = oSrcDataset.affineTransformation_inverse[0] + x_coord * oSrcDataset.affineTransformation_inverse[1] + y_coord * oSrcDataset.affineTransformation_inverse[2];
+              double yy = oSrcDataset.affineTransformation_inverse[3] + x_coord * oSrcDataset.affineTransformation_inverse[4] + y_coord * oSrcDataset.affineTransformation_inverse[5];
+              xx -= nXOff;
+              yy -= nYOff;
+              xx *= scalex;
+              yy *= scaley;
+            
+              _ReadImageDataMemBGR(pData, sourcetilewidth, 
+                                              sourcetileheight, (int)(xx), (int)(yy), 
+                                              &r,&g,&b,&a);
+            }
+            else
+            {  // outside global extent -> completely transparent...
+               r=0;
+               g=0;
+               b=0;
+               a=0;
+            }
+       }
+       else
+       {
+          OCTTransform(pCTBack, 1, &x_coord, &y_coord, NULL);            
+          double xx = oSrcDataset.affineTransformation_inverse[0] + x_coord * oSrcDataset.affineTransformation_inverse[1] + y_coord * oSrcDataset.affineTransformation_inverse[2];
+          double yy = oSrcDataset.affineTransformation_inverse[3] + x_coord * oSrcDataset.affineTransformation_inverse[4] + y_coord * oSrcDataset.affineTransformation_inverse[5];
+          xx -= nXOff;
+          yy -= nYOff;
+          xx *= scalex;
+          yy *= scaley;
+         
+          _ReadImageDataMemBGR(pData, sourcetilewidth, 
+                                          sourcetileheight, (int)(xx), (int)(yy), 
+                                          &r,&g,&b,&a);
+       }
        
        map->raw_image->data[4*map->width*y+4*x+0] = b;
        map->raw_image->data[4*map->width*y+4*x+1] = g;
        map->raw_image->data[4*map->width*y+4*x+2] = r;
        map->raw_image->data[4*map->width*y+4*x+3] = a;
-       
        
        // Draw Grid:
        //if (x==0 || y==0 || x==tilewidth-1 || y==tileheight-1)
@@ -616,24 +655,25 @@ void parse_extent(char* text, mapcache_extent* extent)
   double minx, miny, maxx, maxy;
   if (text == NULL || extent == NULL)
   {
-      return;
+    return;
   }
   
   extent->minx = -1e20;
   extent->miny = -1e20;
   extent->maxx = 1e20;
   extent->maxy = 1e20;
+  char* next;
   
-  char* pch = strtok(text," ");
+  char* pch = strtok_r(text," ",&next);
   if (pch != NULL) { minx = atof(pch); }
   else {return;}
-  pch = strtok(text," ");
+  pch = strtok_r(NULL," ",&next);
   if (pch != NULL) { miny = atof(pch); }
   else {return;}
-   pch = strtok(text," ");
+   pch = strtok_r(NULL," ",&next);
   if (pch != NULL) { maxx = atof(pch); }
   else {return;}
-   pch = strtok(text," ");
+   pch = strtok_r(NULL," ",&next);
   if (pch != NULL) { maxy = atof(pch); }
   else {return;}
   
