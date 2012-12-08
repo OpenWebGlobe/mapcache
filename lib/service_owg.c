@@ -44,13 +44,13 @@ void _create_capabilities_owg(mapcache_context *ctx, mapcache_request_get_capabi
   // todo: use real data
    const char* name = request->layer;
    const char* type = "image";
-   const char* format = "jpg";
+   const char* format = request->tileset->format->extension;
    int minlod = request->grid_link->minz+1;
-   int maxlod = request->grid_link->maxz;
-   int x0 = request->grid_link->grid_limits[maxlod-1].minx;
-   int y0 = request->grid_link->grid_limits[maxlod-1].miny;
-   int x1 = request->grid_link->grid_limits[maxlod-1].maxx;
-   int y1 = request->grid_link->grid_limits[maxlod-1].maxy;
+   int maxlod = request->grid_link->maxz-1;
+   int x0 = request->grid_link->grid_limits[maxlod].minx;
+   int y0 = request->grid_link->grid_limits[maxlod].miny;
+   int x1 = request->grid_link->grid_limits[maxlod].maxx;
+   int y1 = request->grid_link->grid_limits[maxlod].maxy;
    
    char* result = apr_psprintf(ctx->pool, "\
 {\
@@ -256,11 +256,9 @@ void _mapcache_service_owg_parse_request(mapcache_context *ctx, mapcache_service
     req->ntiles = 0;
 
     for (key = apr_strtok(sTileset, ";", &last); key != NULL;
-         key = apr_strtok(NULL, ";", &last)) 
-    {
+         key = apr_strtok(NULL, ";", &last)) {
       tileset = mapcache_configuration_get_tileset(config,key);
-      if(!tileset) 
-      {
+      if(!tileset) {
         /*tileset not found directly, test if it was given as "name@grid" notation*/
         char *tname = apr_pstrdup(ctx->pool,key);
         char *gname = tname;
@@ -281,8 +279,7 @@ void _mapcache_service_owg_parse_request(mapcache_context *ctx, mapcache_service
           return;
         }
         tileset = mapcache_configuration_get_tileset(config,tname);
-        if(!tileset) 
-        {
+        if(!tileset) {
           ctx->set_error(ctx,404, "received owg request with invalid layer %s", tname);
           return;
         }
@@ -306,7 +303,7 @@ void _mapcache_service_owg_parse_request(mapcache_context *ctx, mapcache_service
       {
         grid_link = APR_ARRAY_IDX(tileset->grid_links,0,mapcache_grid_link*);
       }
-      if(!gridname)
+      if(!gridname) 
       {
         gridname = grid_link->grid->name;
       } 
@@ -319,28 +316,26 @@ void _mapcache_service_owg_parse_request(mapcache_context *ctx, mapcache_service
           return;
         }
       }
+
+      int owg_y = grid_link->grid->levels[z]->maxy - y - 1;
       
-      // owg tiles layout has (0,0) at top left
-      y = grid_link->grid->levels[z]->maxy - y - 1;
-     
       req->tiles[req->ntiles] = mapcache_tileset_tile_create(ctx->pool, tileset, grid_link);
-      switch(grid_link->grid->origin) 
-      {
+      switch(grid_link->grid->origin) {
         case MAPCACHE_GRID_ORIGIN_BOTTOM_LEFT:
           req->tiles[req->ntiles]->x = x;
-          req->tiles[req->ntiles]->y = y;
+          req->tiles[req->ntiles]->y = owg_y;
           break;
         case MAPCACHE_GRID_ORIGIN_TOP_LEFT:
           req->tiles[req->ntiles]->x = x;
-          req->tiles[req->ntiles]->y = grid_link->grid->levels[z]->maxy - y - 1;
+          req->tiles[req->ntiles]->y = grid_link->grid->levels[z]->maxy - owg_y - 1;
           break;
         case MAPCACHE_GRID_ORIGIN_BOTTOM_RIGHT:
           req->tiles[req->ntiles]->x = grid_link->grid->levels[z]->maxx - x - 1;
-          req->tiles[req->ntiles]->y = y;
+          req->tiles[req->ntiles]->y = owg_y;
           break;
         case MAPCACHE_GRID_ORIGIN_TOP_RIGHT:
           req->tiles[req->ntiles]->x = grid_link->grid->levels[z]->maxx - x - 1;
-          req->tiles[req->ntiles]->y = grid_link->grid->levels[z]->maxy - y - 1;
+          req->tiles[req->ntiles]->y = grid_link->grid->levels[z]->maxy - owg_y - 1;
           break;
       }
       req->tiles[req->ntiles]->z = z;
@@ -350,7 +345,7 @@ void _mapcache_service_owg_parse_request(mapcache_context *ctx, mapcache_service
     }
     *request = (mapcache_request*)req;
     return;
-  } 
+  }
   else 
   {
     ctx->set_error(ctx,404, "received request with wrong number of arguments");
