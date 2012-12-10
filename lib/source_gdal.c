@@ -41,10 +41,9 @@
 #include "cpl_string.h"
 #include "ogr_srs_api.h"
 
-
 //------------------------------------------------------------------------------
 // This is an optimized dataset transformation based on OpenWebGlobe 
-// data processing code (which is much faster than the original implementation.)
+// data processing code (which is usually faster than WMS-Requests)
 // Created by Martin Christen, martin.christen@fhnw.ch
 //------------------------------------------------------------------------------
 
@@ -89,61 +88,22 @@ inline void _ReadImageDataMemBGR(unsigned char* buffer, int bufferwidth,
   *a = 255;
 }
 //------------------------------------------------------------------------------
-inline void _ReadImageValueBilinearBGR(unsigned char* buffer, int bufferwidth, 
-                                       int bufferheight, double x, double y, 
-                                       unsigned char* r, unsigned char* g, 
-                                       unsigned char* b, unsigned char* a)
-   {
-      double uf = Fract(x);
-      double vf = Fract(y);
-      int nPixelX = (int)x;
-      int nPixelY = (int)y;
-
-      int u00,v00,u10,v10,u01,v01,u11,v11;
-      u00 = nPixelX; if (u00>bufferwidth) u00 = bufferwidth-1;
-      v00 = nPixelY; if (v00>bufferheight) u00 = bufferheight-1;
-      u10 = nPixelX+1; if (u10>bufferwidth) u10 = bufferwidth-1;
-      v10 = nPixelY; if (v10>bufferheight) v10 = bufferheight-1;
-      u01 = nPixelX; if (u01>bufferwidth) u01 = bufferwidth-1;
-      v01 = nPixelY+1; if (v01>bufferheight) v01 = bufferheight-1;
-      u11 = nPixelX+1; if (u11>bufferwidth) u11 = bufferwidth-1;
-      v11 = nPixelY+1; if (v11>bufferheight) v11 = bufferheight-1;
-
-      unsigned char r00,g00,b00,a00;
-      unsigned char r10,g10,b10,a10;
-      unsigned char r01,g01,b01,a01;
-      unsigned char r11,g11,b11,a11;
-
-      _ReadImageDataMemBGR(buffer, bufferwidth, bufferheight, 
-                              u00,v00,&r00,&g00,&b00,&a00);
-      _ReadImageDataMemBGR(buffer, bufferwidth, bufferheight, 
-                              u10,v10,&r10,&g10,&b10,&a10);
-      _ReadImageDataMemBGR(buffer, bufferwidth, bufferheight, 
-                              u01,v01,&r01,&g01,&b01,&a01);
-      _ReadImageDataMemBGR(buffer, bufferwidth, bufferheight, 
-                              u11,v11,&r11,&g11,&b11,&a11);
-
-      double rd, gd, bd, ad;
-
-      rd = (((double)r00)*(1-uf)*(1-vf)+((double)r10)*uf*(1-vf)
-               +((double)r01)*(1-uf)*vf+((double)r11)*uf*vf)+0.5;
-      gd = (((double)g00)*(1-uf)*(1-vf)+((double)g10)*uf*(1-vf)
-               +((double)g01)*(1-uf)*vf+((double)g11)*uf*vf)+0.5;
-      bd = (((double)b00)*(1-uf)*(1-vf)+((double)b10)*uf*(1-vf)
-               +((double)b01)*(1-uf)*vf+((double)b11)*uf*vf)+0.5;
-      ad = (((double)a00)*(1-uf)*(1-vf)+((double)a10)*uf*(1-vf)
-               +((double)a01)*(1-uf)*vf+((double)a11)*uf*vf)+0.5;
-
-      rd = Clamp(rd, 0.0, 255.0);
-      gd = Clamp(gd, 0.0, 255.0);
-      bd = Clamp(bd, 0.0, 255.0);
-      ad = Clamp(ad, 0.0, 255.0);
-
-      *r = (unsigned char) rd;
-      *g = (unsigned char) gd;
-      *b = (unsigned char) bd;
-      *a = (unsigned char) ad;
-   }
+inline void _ReadImageDataMemBGRA(unsigned char* buffer, int bufferwidth, 
+                                 int bufferheight, int x, int y, 
+                                 unsigned char* r, unsigned char* g, 
+                                 unsigned char* b, unsigned char* a)
+{
+  if (x<0 || y<0 || x>bufferwidth-1 || y>bufferheight-1) 
+  { 
+     *b=0; *g=0; *r=0; *a=0;
+     return;
+  }
+  
+  *b = buffer[bufferwidth*4*y+4*x+2];
+  *g = buffer[bufferwidth*4*y+4*x+1];
+  *r = buffer[bufferwidth*4*y+4*x];
+  *a = buffer[bufferwidth*4*y+4*x+3];
+}
 //------------------------------------------------------------------------------
 inline int TestRectRectIntersect(double ulx1,double uly1,double lrx1,double lry1,   
                                  double ulx2,double uly2,double lrx2,double lry2)
@@ -195,6 +155,168 @@ int InvertGeoMatrix(double* mGeoMatrix, double* mInvGeoMatrix)
   return TRUE;
 } 
 //------------------------------------------------------------------------------
+inline void CreateMapBGR(mapcache_context *ctx, mapcache_map *map, 
+      datasetinfo* pSrcDataset, datasetinfo* pDstDataset, 
+      int sourcetilewidth, int sourcetileheight, mapcache_source_gdal* gdal, 
+      OGRCoordinateTransformationH pCTBack, OGRCoordinateTransformationH pCTWGS84, 
+      double minx_data_wgs84, double miny_data_wgs84,
+      double maxx_data_wgs84,double maxy_data_wgs84, int nXOff,
+      int nYOff, double scalex, double scaley, unsigned char* pData)
+{
+  //----------------------------------------------------------------------------
+  map->raw_image = mapcache_image_create(ctx);
+  map->raw_image->w = map->width;
+  map->raw_image->h = map->height;
+  map->raw_image->stride = 4 * map->width;
+  map->raw_image->data = malloc(map->width*map->height*4);
+  int x,y;
+  for (y=0;y<map->height;y++)
+  {
+     for (x=0;x<map->width;x++)
+     {
+       unsigned char r,g,b,a; 
+       double x_coord = pDstDataset->ulx + ((double)x)*pDstDataset->pixelwidth;
+       double y_coord = pDstDataset->uly - ((double)y)*pDstDataset->pixelheight;
+       
+       // note: non-global datasets may have too large numbers (overflow) to
+       //       process on a global system. Therefore this additional check is
+       //       implemented
+       if (gdal->extent != NULL)
+       {
+            double x_wgs84 = x_coord;
+            double y_wgs84 = y_coord;
+            OCTTransform(pCTWGS84, 1, &x_wgs84, &y_wgs84, NULL);
+            
+            if (x_wgs84>=minx_data_wgs84 &&
+                x_wgs84<=maxx_data_wgs84 &&
+                y_wgs84>=miny_data_wgs84 &&
+                y_wgs84<=maxy_data_wgs84)
+            {
+              // pixel will be inside dataset!
+              OCTTransform(pCTBack, 1, &x_coord, &y_coord, NULL);            
+              double xx = pSrcDataset->affineTransformation_inverse[0] + x_coord * pSrcDataset->affineTransformation_inverse[1] + y_coord * pSrcDataset->affineTransformation_inverse[2];
+              double yy = pSrcDataset->affineTransformation_inverse[3] + x_coord * pSrcDataset->affineTransformation_inverse[4] + y_coord * pSrcDataset->affineTransformation_inverse[5];
+              xx -= nXOff;
+              yy -= nYOff;
+              xx *= scalex;
+              yy *= scaley;
+            
+              _ReadImageDataMemBGR(pData, sourcetilewidth, 
+                                              sourcetileheight, (int)(xx), (int)(yy), 
+                                              &r,&g,&b,&a);
+            }
+            else
+            {  // outside global extent -> completely transparent...
+               r=0;
+               g=0;
+               b=0;
+               a=0;
+            }
+       }
+       else
+       {
+          OCTTransform(pCTBack, 1, &x_coord, &y_coord, NULL);            
+          double xx = pSrcDataset->affineTransformation_inverse[0] + x_coord * pSrcDataset->affineTransformation_inverse[1] + y_coord * pSrcDataset->affineTransformation_inverse[2];
+          double yy = pSrcDataset->affineTransformation_inverse[3] + x_coord * pSrcDataset->affineTransformation_inverse[4] + y_coord * pSrcDataset->affineTransformation_inverse[5];
+          xx -= nXOff;
+          yy -= nYOff;
+          xx *= scalex;
+          yy *= scaley;
+         
+          _ReadImageDataMemBGR(pData, sourcetilewidth, 
+                                          sourcetileheight, (int)(xx), (int)(yy), 
+                                          &r,&g,&b,&a);
+       }
+       
+       map->raw_image->data[4*map->width*y+4*x+0] = b;
+       map->raw_image->data[4*map->width*y+4*x+1] = g;
+       map->raw_image->data[4*map->width*y+4*x+2] = r;
+       map->raw_image->data[4*map->width*y+4*x+3] = a;
+     }
+  }
+}
+//------------------------------------------------------------------------------
+inline void CreateMapBGRA(mapcache_context *ctx, mapcache_map *map, 
+      datasetinfo* pSrcDataset, datasetinfo* pDstDataset, 
+      int sourcetilewidth, int sourcetileheight, mapcache_source_gdal* gdal, 
+      OGRCoordinateTransformationH pCTBack, OGRCoordinateTransformationH pCTWGS84, 
+      double minx_data_wgs84, double miny_data_wgs84,
+      double maxx_data_wgs84,double maxy_data_wgs84, int nXOff,
+      int nYOff, double scalex, double scaley, unsigned char* pData)
+{
+  //----------------------------------------------------------------------------
+  map->raw_image = mapcache_image_create(ctx);
+  map->raw_image->w = map->width;
+  map->raw_image->h = map->height;
+  map->raw_image->stride = 4 * map->width;
+  map->raw_image->data = malloc(map->width*map->height*4);
+  int x,y;
+  for (y=0;y<map->height;y++)
+  {
+     for (x=0;x<map->width;x++)
+     {
+       unsigned char r,g,b,a; 
+       double x_coord = pDstDataset->ulx + ((double)x)*pDstDataset->pixelwidth;
+       double y_coord = pDstDataset->uly - ((double)y)*pDstDataset->pixelheight;
+       
+       // note: non-global datasets may have too large numbers (overflow) to
+       //       process on a global system. Therefore this additional check is
+       //       implemented
+       if (gdal->extent != NULL)
+       {
+            double x_wgs84 = x_coord;
+            double y_wgs84 = y_coord;
+            OCTTransform(pCTWGS84, 1, &x_wgs84, &y_wgs84, NULL);
+            
+            if (x_wgs84>=minx_data_wgs84 &&
+                x_wgs84<=maxx_data_wgs84 &&
+                y_wgs84>=miny_data_wgs84 &&
+                y_wgs84<=maxy_data_wgs84)
+            {
+              // pixel will be inside dataset!
+              OCTTransform(pCTBack, 1, &x_coord, &y_coord, NULL);            
+              double xx = pSrcDataset->affineTransformation_inverse[0] + x_coord * pSrcDataset->affineTransformation_inverse[1] + y_coord * pSrcDataset->affineTransformation_inverse[2];
+              double yy = pSrcDataset->affineTransformation_inverse[3] + x_coord * pSrcDataset->affineTransformation_inverse[4] + y_coord * pSrcDataset->affineTransformation_inverse[5];
+              xx -= nXOff;
+              yy -= nYOff;
+              xx *= scalex;
+              yy *= scaley;
+            
+              _ReadImageDataMemBGRA(pData, sourcetilewidth, 
+                                              sourcetileheight, (int)(xx), (int)(yy), 
+                                              &r,&g,&b,&a);
+            }
+            else
+            {  // outside global extent -> completely transparent...
+               r=0;
+               g=0;
+               b=0;
+               a=0;
+            }
+       }
+       else
+       {
+          OCTTransform(pCTBack, 1, &x_coord, &y_coord, NULL);            
+          double xx = pSrcDataset->affineTransformation_inverse[0] + x_coord * pSrcDataset->affineTransformation_inverse[1] + y_coord * pSrcDataset->affineTransformation_inverse[2];
+          double yy = pSrcDataset->affineTransformation_inverse[3] + x_coord * pSrcDataset->affineTransformation_inverse[4] + y_coord * pSrcDataset->affineTransformation_inverse[5];
+          xx -= nXOff;
+          yy -= nYOff;
+          xx *= scalex;
+          yy *= scaley;
+         
+          _ReadImageDataMemBGRA(pData, sourcetilewidth, 
+                                          sourcetileheight, (int)(xx), (int)(yy), 
+                                          &r,&g,&b,&a);
+       }
+       
+       map->raw_image->data[4*map->width*y+4*x+0] = b;
+       map->raw_image->data[4*map->width*y+4*x+1] = g;
+       map->raw_image->data[4*map->width*y+4*x+2] = r;
+       map->raw_image->data[4*map->width*y+4*x+3] = a;
+     }
+  }
+}
+//------------------------------------------------------------------------------
 /**
  * \private \memberof mapcache_source_gdal
  * \sa mapcache_source::render_map()
@@ -208,7 +330,6 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
   int tilewidth, tileheight;
   char *dstSRS;
   char *srcSRS = "";
-  char* inputfile;
   datasetinfo oSrcDataset;
   datasetinfo oDstDataset;
   
@@ -223,9 +344,7 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
   OGRSpatialReferenceH wgs84ref = NULL;
   GDALDatasetH hDataset;
   
-  mapcache_buffer *data = mapcache_buffer_create(0,ctx->pool);
   mapcache_source_gdal *gdal = (mapcache_source_gdal*)map->tileset->source;
-  inputfile = gdal->datastr;
   
   // extent of tile:
   minx = map->extent.minx;
@@ -457,8 +576,7 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
   }
   
   double x0,y0,x1,y1;
-  int nXOff;   // Start pixel x
-  int nYOff;   // Start pixel y
+  int nXOff, nYOff;   // Start pixel y
   int nXSize;  // width (number of pixels to read)
   int nYSize;  // height (number of pixels to read)
 
@@ -527,114 +645,88 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
   ctx->log(ctx,MAPCACHE_NOTICE,"Reading Tile-Size: (%i, %i)", sourcetilewidth, sourcetileheight);*/
   
   // Retrieve data from source
-  unsigned char *pData = apr_palloc(ctx->pool,sourcetilewidth*sourcetileheight*3);
+  unsigned char *pData = NULL;
+  int bands = 0;
   
-  if (pData == NULL)
+ 
+  if (oSrcDataset.nBands == 3)
   {
-     ctx->set_error(ctx,500,"Error: Cant allocate memory: %i bytes", sourcetilewidth*sourcetileheight*3);
-     return; 
-  }
   
-  if (CE_None != GDALDatasetRasterIO(hDataset, GF_Read, 
-         nXOff, nYOff,    // Pixel position in source dataset 
-         nXSize, nYSize,  // width/height in source dataset
-         pData,           // target buffer
-         sourcetilewidth, sourcetileheight, // dimension of target buffer
-         GDT_Byte,        // reading bytes...
-         oSrcDataset.nBands, // number of input bands
-         NULL,            // band map is ignored
-         3,               // pixelspace
-         3*sourcetilewidth, //linespace, 
-         1                  //bandspace.
-  ))
+    bands = 3;
+    pData = apr_palloc(ctx->pool,sourcetilewidth*sourcetileheight*3);
+    if (pData == NULL)
+    {
+      ctx->set_error(ctx,500,"Error: Cant allocate memory: %i bytes", sourcetilewidth*sourcetileheight*3);
+      return; 
+    }
+    
+    if (CE_None != GDALDatasetRasterIO(hDataset, GF_Read, 
+           nXOff, nYOff,    // Pixel position in source dataset 
+           nXSize, nYSize,  // width/height in source dataset
+           pData,           // target buffer
+           sourcetilewidth, sourcetileheight, // dimension of target buffer
+           GDT_Byte,        // reading bytes...
+           oSrcDataset.nBands, // number of input bands
+           NULL,            // band map is ignored
+           3,               // pixelspace
+           3*sourcetilewidth, //linespace, 
+           1                  //bandspace.
+    ))
+    {
+      ctx->set_error(ctx,500,"Error: GDALDatasetRasterIO failed!");
+      return;  
+    }
+  }
+  else if (oSrcDataset.nBands == 4)
   {
-    ctx->set_error(ctx,500,"Error: GDALDatasetRasterIO failed!");
-    return;  
+    bands = 4;
+    pData = apr_palloc(ctx->pool,sourcetilewidth*sourcetileheight*4);
+    if (pData == NULL)
+    {
+      ctx->set_error(ctx,500,"Error: Cant allocate memory: %i bytes", sourcetilewidth*sourcetileheight*4);
+      return; 
+    }
+    
+    if (CE_None != GDALDatasetRasterIO(hDataset, GF_Read, 
+           nXOff, nYOff,    // Pixel position in source dataset 
+           nXSize, nYSize,  // width/height in source dataset
+           pData,           // target buffer
+           sourcetilewidth, sourcetileheight, // dimension of target buffer
+           GDT_Byte,        // reading bytes...
+           oSrcDataset.nBands, // number of input bands
+           NULL,            // band map is ignored
+           4,               // pixelspace
+           4*sourcetilewidth, //linespace, 
+           1                  //bandspace.
+    ))
+    {
+      ctx->set_error(ctx,500,"Error: GDALDatasetRasterIO failed!");
+      return;  
+    }
   }
-  
+  else
+  {
+    bands = 0;
+    ctx->set_error(ctx,500,"Error: Unsupported number of bands");
+    return; 
+  }
   // Close Dataset
   GDALClose( hDataset );
 
-  //----------------------------------------------------------------------------
-  map->raw_image = mapcache_image_create(ctx);
-  map->raw_image->w = map->width;
-  map->raw_image->h = map->height;
-  map->raw_image->stride = 4 * map->width;
-  map->raw_image->data = malloc(map->width*map->height*4);
-  int x,y;
-  for (y=0;y<map->height;y++)
+  if (bands == 3)
   {
-     for (x=0;x<map->width;x++)
-     {
-       unsigned char r,g,b,a; 
-       double x_coord = oDstDataset.ulx + ((double)x)*oDstDataset.pixelwidth;
-       double y_coord = oDstDataset.uly - ((double)y)*oDstDataset.pixelheight;
-       
-       // note: non-global datasets may have too large numbers (overflow) to
-       //       process on a global system. Therefore this additional check is
-       //       implemented
-       if (gdal->extent != NULL)
-       {
-            double x_wgs84 = x_coord;
-            double y_wgs84 = y_coord;
-            OCTTransform(pCTWGS84, 1, &x_wgs84, &y_wgs84, NULL);
-            
-            if (x_wgs84>=minx_data_wgs84 &&
-                x_wgs84<=maxx_data_wgs84 &&
-                y_wgs84>=miny_data_wgs84 &&
-                y_wgs84<=maxy_data_wgs84)
-            {
-              // pixel will be inside dataset!
-              OCTTransform(pCTBack, 1, &x_coord, &y_coord, NULL);            
-              double xx = oSrcDataset.affineTransformation_inverse[0] + x_coord * oSrcDataset.affineTransformation_inverse[1] + y_coord * oSrcDataset.affineTransformation_inverse[2];
-              double yy = oSrcDataset.affineTransformation_inverse[3] + x_coord * oSrcDataset.affineTransformation_inverse[4] + y_coord * oSrcDataset.affineTransformation_inverse[5];
-              xx -= nXOff;
-              yy -= nYOff;
-              xx *= scalex;
-              yy *= scaley;
-            
-              _ReadImageDataMemBGR(pData, sourcetilewidth, 
-                                              sourcetileheight, (int)(xx), (int)(yy), 
-                                              &r,&g,&b,&a);
-            }
-            else
-            {  // outside global extent -> completely transparent...
-               r=0;
-               g=0;
-               b=0;
-               a=0;
-            }
-       }
-       else
-       {
-          OCTTransform(pCTBack, 1, &x_coord, &y_coord, NULL);            
-          double xx = oSrcDataset.affineTransformation_inverse[0] + x_coord * oSrcDataset.affineTransformation_inverse[1] + y_coord * oSrcDataset.affineTransformation_inverse[2];
-          double yy = oSrcDataset.affineTransformation_inverse[3] + x_coord * oSrcDataset.affineTransformation_inverse[4] + y_coord * oSrcDataset.affineTransformation_inverse[5];
-          xx -= nXOff;
-          yy -= nYOff;
-          xx *= scalex;
-          yy *= scaley;
-         
-          _ReadImageDataMemBGR(pData, sourcetilewidth, 
-                                          sourcetileheight, (int)(xx), (int)(yy), 
-                                          &r,&g,&b,&a);
-       }
-       
-       map->raw_image->data[4*map->width*y+4*x+0] = b;
-       map->raw_image->data[4*map->width*y+4*x+1] = g;
-       map->raw_image->data[4*map->width*y+4*x+2] = r;
-       map->raw_image->data[4*map->width*y+4*x+3] = a;
-       
-       // Draw Grid:
-       //if (x==0 || y==0 || x==tilewidth-1 || y==tileheight-1)
-       //{
-       //  map->raw_image->data[4*map->width*y+4*x+0] = 0;
-       //  map->raw_image->data[4*map->width*y+4*x+1] = 0;
-       //  map->raw_image->data[4*map->width*y+4*x+2] = 0;
-       //  map->raw_image->data[4*map->width*y+4*x+3] = 255;
-       //}
-     }
+    CreateMapBGR(ctx, map, &oSrcDataset, &oDstDataset, 
+                 sourcetilewidth, sourcetileheight, gdal, pCTBack, pCTWGS84,
+                 minx_data_wgs84,miny_data_wgs84,maxx_data_wgs84,maxy_data_wgs84,
+                 nXOff, nYOff, scalex, scaley, pData
+                );
+   
   }
+  else if (bands == 4)
+  {
+    //CreateMapBGRA();
+  }
+  
   
   // free SRS
   OCTDestroyCoordinateTransformation(pCT);   
