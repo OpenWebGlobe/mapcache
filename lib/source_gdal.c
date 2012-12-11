@@ -49,7 +49,8 @@
 
 typedef struct datasetinfo datasetinfo;
 
-#define GM_EPSILON 2.2204460492503131e-16  
+#define GM_EPSILON 2.2204460492503131e-16 
+#define GM_EPSILONFLT 1.19209290e-7f
 #define GM_MIN(x,y)  ((x<y) ? x : y)
 #define GM_MAX(x,y)  ((x>y) ? x : y)
 
@@ -103,6 +104,82 @@ inline void _ReadImageDataMemBGRA(unsigned char* buffer, int bufferwidth,
   *g = buffer[bufferwidth*4*y+4*x+1];
   *r = buffer[bufferwidth*4*y+4*x];
   *a = buffer[bufferwidth*4*y+4*x+3];
+}
+//------------------------------------------------------------------------------
+inline void _ReadImageDataMemGray(unsigned char* buffer, int bufferwidth, 
+                                 int bufferheight, int x, int y, 
+                                 unsigned char* r, unsigned char* g, 
+                                 unsigned char* b, unsigned char* a, float NODATA, int datatype)
+{
+  if (x<0 || y<0 || x>bufferwidth-1 || y>bufferheight-1) 
+  { 
+     *b=0; *g=0; *r=0; *a=0;
+     return;
+  }
+  
+  unsigned int ui_value;
+  int i_value;
+  float f_value;
+  double d_value;
+  unsigned short us_value;
+  short s_value;
+  char b_value;
+  
+  double value = 0.0;
+  
+  switch(datatype)
+  {
+    case 1:  // GDT_UInt32
+      ui_value = ((unsigned int*)buffer)[bufferwidth*y+x];
+      value = (double) ui_value;
+      break;
+    case 2:  // GDT_Int32
+      i_value = ((int*)buffer)[bufferwidth*y+x];
+      value = (double) i_value;
+      break;
+    case 3:  // GDT_Float32
+      f_value = ((float*)buffer)[bufferwidth*y+x];
+      value = (double) f_value;
+      break;
+    case 4:  // GDT_Float64
+      d_value = ((double*)buffer)[bufferwidth*y+x];
+      value = d_value;
+      break;
+    case 5: 
+      us_value = ((unsigned short*)buffer)[bufferwidth*y+x];
+      value = (double) us_value;
+    break;
+    case 6:  
+      s_value = ((short*)buffer)[bufferwidth*y+x];
+      value = (double) s_value;
+    break;
+    case 7:  
+      b_value = ((char*)buffer)[bufferwidth*y+x];
+      value = (double) b_value;
+    break;
+    default:
+      return;
+  }
+ 
+  
+  if (fabs(value-NODATA)<GM_EPSILONFLT)
+  {
+    *b=0; *g=0; *r=0; *a=0;
+  }
+  else
+  {
+    *b = (unsigned char)Clamp(value,0.0,255.0);
+    *g = *b;
+    *r = *b;
+    *a = 255;
+  }
+  
+  if (value != 0)
+  {
+    int stop = 1;
+    int stop2 = 1;
+  }
+ 
 }
 //------------------------------------------------------------------------------
 inline int TestRectRectIntersect(double ulx1,double uly1,double lrx1,double lry1,   
@@ -307,6 +384,87 @@ inline void CreateMapBGRA(mapcache_context *ctx, mapcache_map *map,
           _ReadImageDataMemBGRA(pData, sourcetilewidth, 
                                           sourcetileheight, (int)(xx), (int)(yy), 
                                           &r,&g,&b,&a);
+       }
+       
+       map->raw_image->data[4*map->width*y+4*x+0] = b;
+       map->raw_image->data[4*map->width*y+4*x+1] = g;
+       map->raw_image->data[4*map->width*y+4*x+2] = r;
+       map->raw_image->data[4*map->width*y+4*x+3] = a;
+     }
+  }
+}
+//------------------------------------------------------------------------------
+inline void CreateMapGray(mapcache_context *ctx, mapcache_map *map, 
+      datasetinfo* pSrcDataset, datasetinfo* pDstDataset, 
+      int sourcetilewidth, int sourcetileheight, mapcache_source_gdal* gdal, 
+      OGRCoordinateTransformationH pCTBack, OGRCoordinateTransformationH pCTWGS84, 
+      double minx_data_wgs84, double miny_data_wgs84,
+      double maxx_data_wgs84,double maxy_data_wgs84, int nXOff,
+      int nYOff, double scalex, double scaley, unsigned char* pData, float NODATA, int datatype)
+{
+  //----------------------------------------------------------------------------
+  map->raw_image = mapcache_image_create(ctx);
+  map->raw_image->w = map->width;
+  map->raw_image->h = map->height;
+  map->raw_image->stride = 4 * map->width;
+  map->raw_image->data = malloc(map->width*map->height*4);
+  int x,y;
+  for (y=0;y<map->height;y++)
+  {
+     for (x=0;x<map->width;x++)
+     {
+       unsigned char r,g,b,a; 
+       double x_coord = pDstDataset->ulx + ((double)x)*pDstDataset->pixelwidth;
+       double y_coord = pDstDataset->uly - ((double)y)*pDstDataset->pixelheight;
+       
+       // note: non-global datasets may have too large numbers (overflow) to
+       //       process on a global system. Therefore this additional check is
+       //       implemented
+       if (gdal->extent != NULL)
+       {
+            double x_wgs84 = x_coord;
+            double y_wgs84 = y_coord;
+            OCTTransform(pCTWGS84, 1, &x_wgs84, &y_wgs84, NULL);
+            
+            if (x_wgs84>=minx_data_wgs84 &&
+                x_wgs84<=maxx_data_wgs84 &&
+                y_wgs84>=miny_data_wgs84 &&
+                y_wgs84<=maxy_data_wgs84)
+            {
+              // pixel will be inside dataset!
+              OCTTransform(pCTBack, 1, &x_coord, &y_coord, NULL);            
+              double xx = pSrcDataset->affineTransformation_inverse[0] + x_coord * pSrcDataset->affineTransformation_inverse[1] + y_coord * pSrcDataset->affineTransformation_inverse[2];
+              double yy = pSrcDataset->affineTransformation_inverse[3] + x_coord * pSrcDataset->affineTransformation_inverse[4] + y_coord * pSrcDataset->affineTransformation_inverse[5];
+              xx -= nXOff;
+              yy -= nYOff;
+              xx *= scalex;
+              yy *= scaley;
+            
+              _ReadImageDataMemGray(pData, sourcetilewidth, 
+                                              sourcetileheight, (int)(xx), (int)(yy), 
+                                              &r,&g,&b,&a, NODATA, datatype);
+            }
+            else
+            {  // outside global extent -> completely transparent...
+               r=0;
+               g=0;
+               b=0;
+               a=0;
+            }
+       }
+       else
+       {
+          OCTTransform(pCTBack, 1, &x_coord, &y_coord, NULL);            
+          double xx = pSrcDataset->affineTransformation_inverse[0] + x_coord * pSrcDataset->affineTransformation_inverse[1] + y_coord * pSrcDataset->affineTransformation_inverse[2];
+          double yy = pSrcDataset->affineTransformation_inverse[3] + x_coord * pSrcDataset->affineTransformation_inverse[4] + y_coord * pSrcDataset->affineTransformation_inverse[5];
+          xx -= nXOff;
+          yy -= nYOff;
+          xx *= scalex;
+          yy *= scaley;
+         
+          _ReadImageDataMemGray(pData, sourcetilewidth, 
+                                          sourcetileheight, (int)(xx), (int)(yy), 
+                                          &r,&g,&b,&a, NODATA, datatype);
        }
        
        map->raw_image->data[4*map->width*y+4*x+0] = b;
@@ -564,6 +722,7 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
     map->raw_image->h = map->height;
     map->raw_image->stride = 4 * map->width;
     map->raw_image->data = malloc(map->width*map->height*4);
+    map->raw_image->is_blank = MC_EMPTY_YES;
     memset(map->raw_image->data, 0, map->width*map->height*4);
     apr_pool_cleanup_register(ctx->pool, map->raw_image->data,(void*)free, apr_pool_cleanup_null);
     
@@ -614,6 +773,7 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
     map->raw_image->h = map->height;
     map->raw_image->stride = 4 * map->width;
     map->raw_image->data = malloc(map->width*map->height*4);
+    map->raw_image->is_blank = MC_EMPTY_YES;
     memset(map->raw_image->data, 0, map->width*map->height*4);
     apr_pool_cleanup_register(ctx->pool, map->raw_image->data,(void*)free, apr_pool_cleanup_null);
     
@@ -647,6 +807,9 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
   // Retrieve data from source
   unsigned char *pData = NULL;
   int bands = 0;
+  float NODATA = -9999;
+  int datatype_bytes;
+  int datatype;
   
  
   if (oSrcDataset.nBands == 3)
@@ -704,6 +867,77 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
       return;  
     }
   }
+  else if (oSrcDataset.nBands == 1)
+  {
+    bands = 1;
+    int success;
+    GDALRasterBandH hBand = GDALGetRasterBand(hDataset, 1); 
+    if (hBand)
+    {
+      NODATA = (float)GDALGetRasterNoDataValue(hBand, &success);  
+    }
+    
+    GDALDataType rdd = GDALGetRasterDataType(hBand);
+    
+    switch (rdd)
+    {
+      case GDT_Byte:
+        datatype = 7;
+        datatype_bytes = 1;
+      break;
+      case GDT_UInt16:
+        datatype = 5;
+        datatype_bytes = GDALGetDataTypeSize(GDT_UInt16) / 8;
+      break;
+      case GDT_Int16:
+        datatype = 6;
+        datatype_bytes = GDALGetDataTypeSize(GDT_Int16) / 8;
+      break;
+      case GDT_UInt32:
+        datatype = 1;
+        datatype_bytes = GDALGetDataTypeSize(GDT_UInt32) / 8;
+      break;
+      case GDT_Int32:
+        datatype = 2;
+        datatype_bytes = GDALGetDataTypeSize(GDT_Int32) / 8;
+      break;
+      case GDT_Float32:
+        datatype = 3;
+        datatype_bytes = GDALGetDataTypeSize(GDT_Float32) / 8;
+      break;
+      case GDT_Float64:
+        datatype = 4;
+        datatype_bytes = GDALGetDataTypeSize(GDT_Float64) / 8;
+      break;
+      default:
+         ctx->set_error(ctx,500,"Error: Unsupported Raster Data Type");
+      return;
+      }
+    
+    pData = apr_palloc(ctx->pool,sourcetilewidth*sourcetileheight*datatype_bytes);
+    if (pData == NULL)
+    {
+      ctx->set_error(ctx,500,"Error: Cant allocate memory: %i bytes", sourcetilewidth*sourcetileheight*datatype_bytes);
+      return; 
+    } 
+ 
+    if (CE_None != GDALDatasetRasterIO(hDataset, GF_Read, 
+           nXOff, nYOff,    // Pixel position in source dataset 
+           nXSize, nYSize,  // width/height in source dataset
+           pData,        // target buffer
+           sourcetilewidth, sourcetileheight, // dimension of target buffer
+           rdd,      
+           oSrcDataset.nBands, // number of input bands
+           NULL,            // band map is ignored
+           datatype_bytes,  // pixelspace
+           datatype_bytes*sourcetilewidth, //linespace, 
+           1                  //bandspace.
+    ))
+    {
+      ctx->set_error(ctx,500,"Error: GDALDatasetRasterIO failed!");
+      return;  
+    }
+  }
   else
   {
     bands = 0;
@@ -724,7 +958,18 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
   }
   else if (bands == 4)
   {
-    //CreateMapBGRA();
+    CreateMapBGRA(ctx, map, &oSrcDataset, &oDstDataset, 
+                 sourcetilewidth, sourcetileheight, gdal, pCTBack, pCTWGS84,
+                 minx_data_wgs84,miny_data_wgs84,maxx_data_wgs84,maxy_data_wgs84,
+                 nXOff, nYOff, scalex, scaley, pData
+                );
+  }
+  else if (bands == 1)
+  {
+    CreateMapGray(ctx, map, &oSrcDataset, &oDstDataset, 
+                 sourcetilewidth, sourcetileheight, gdal, pCTBack, pCTWGS84,
+                 minx_data_wgs84,miny_data_wgs84,maxx_data_wgs84,maxy_data_wgs84,
+                 nXOff, nYOff, scalex, scaley, pData, NODATA, datatype);
   }
   
   
