@@ -380,7 +380,12 @@ static char *demo_footer_gmaps =
   "</body>\n"
   "</html>\n";
 
-
+const char* demo_head_owg = 
+  "<head><title>OpenWebGlobe Demo</title></head>\n"
+  "<body>";
+  
+const char* demo_footer_owg = "</body>";  
+  
 
 /**
  * \brief parse a demo request
@@ -839,6 +844,45 @@ void _create_demo_gmaps(mapcache_context *ctx, mapcache_request_get_capabilities
   req->capabilities = caps;
 }
 
+
+void _create_demo_owg(mapcache_context *ctx, mapcache_request_get_capabilities *req,
+                      const char *url_prefix)
+{
+  mapcache_tileset *tileset;
+  apr_hash_index_t *tileindex_index;
+  char *demo = "";
+  tileindex_index = apr_hash_first(ctx->pool,ctx->config->tilesets);
+  /*while(tileindex_index) {
+    int i,j;
+    char *extension;
+    
+    mapcache_tileset *tileset;
+    const void *key;
+    apr_ssize_t keylen;
+    apr_hash_this(tileindex_index,&key,&keylen,(void**)&tileset);
+
+    extension = "png";
+    if (tileset->format && tileset->format->extension)
+      extension = tileset->format->extension;
+    for(j=0; j<tileset->grid_links->nelts; j++) {
+      char *resolutions="";
+      char *ol_layer_name;
+      mapcache_grid_link *grid_link = APR_ARRAY_IDX(tileset->grid_links,j,mapcache_grid_link*);
+      mapcache_grid *grid = grid_link->grid;
+      ol_layer_name = apr_psprintf(ctx->pool, "%s@%s", tileset->name, grid->name);
+      demo = apr_psprintf(ctx->pool, "%s<br/>%s", demo,ol_layer_name);
+    }
+  }*/
+  
+  
+  char *caps = apr_psprintf(ctx->pool,"%s%s%s", demo_head_owg, demo, demo_footer_owg);
+  req->mime_type = apr_pstrdup(ctx->pool,"text/html");
+
+ 
+  //req->capabilities = apr_pstrdup(ctx->pool,caps);
+  req->capabilities = caps;
+}
+
 void _create_capabilities_demo(mapcache_context *ctx, mapcache_request_get_capabilities *req,
                                char *url, char *path_info, mapcache_cfg *cfg)
 {
@@ -864,6 +908,8 @@ void _create_capabilities_demo(mapcache_context *ctx, mapcache_request_get_capab
         return _create_demo_gmaps(ctx,req,onlineresource);
       case MAPCACHE_SERVICE_KML:
         return _create_demo_kml(ctx,req,onlineresource);
+      case MAPCACHE_SERVICE_OWG:
+        return _create_demo_owg(ctx,req,onlineresource);
       case MAPCACHE_SERVICE_DEMO:
         ctx->set_error(ctx,400,"selected service does not provide a demo page");
         return;

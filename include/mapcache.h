@@ -94,6 +94,7 @@ typedef struct mapcache_request_get_feature_info mapcache_request_get_feature_in
 typedef struct mapcache_map mapcache_map;
 typedef struct mapcache_http_response mapcache_http_response;
 typedef struct mapcache_source_wms mapcache_source_wms;
+typedef struct mapcache_source_tms mapcache_source_tms;
 #ifdef USE_GDAL
 typedef struct mapcache_source_gdal mapcache_source_gdal;
 #endif
@@ -262,6 +263,7 @@ typedef enum {
   MAPCACHE_SOURCE_WMS,
   MAPCACHE_SOURCE_MAPSERVER,
   MAPCACHE_SOURCE_DUMMY,
+  MAPCACHE_SOURCE_TMS,
   MAPCACHE_SOURCE_GDAL
 } mapcache_source_type;
 
@@ -307,6 +309,17 @@ struct mapcache_source_wms {
   apr_table_t *wms_default_params; /**< default WMS parameters (SERVICE,REQUEST,STYLES,VERSION) */
   apr_table_t *getmap_params; /**< WMS parameters specified in configuration */
   apr_table_t *getfeatureinfo_params; /**< WMS parameters specified in configuration */
+  mapcache_http *http;
+};
+
+/**\class mapcache_source_tms
+ * \brief TMS mapcache_source
+ * \implements mapcache_source
+ */
+struct mapcache_source_tms {
+  mapcache_source source;
+  char* url;  /**< base URL of TMS service */
+  char* layer; /**< name of layer to be used */
   mapcache_http *http;
 };
 

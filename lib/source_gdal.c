@@ -106,6 +106,58 @@ inline void _ReadImageDataMemBGRA(unsigned char* buffer, int bufferwidth,
   *a = buffer[bufferwidth*4*y+4*x+3];
 }
 //------------------------------------------------------------------------------
+// Approximate RBG values for mapping elevation to visible 
+// wavelengths between 380 nm and 780nm
+// based on: http://www.physics.sfasu.edu/astro/color/spectra.html
+inline void _CalcSpectrumColor(double value, double mine, double maxe, char* r, char* g, char* b)
+{
+  double w = value * 400.0 / (maxe-mine) + 380;  // w in visible spectrum [380...780]
+  
+  if (w >= 380.0 &&  w < 440.0)
+  {
+    *r = (unsigned char) (255.0*(-(w - 440.0) / (440.0 - 380.0)));
+    *g = 0;
+    *b = 255;
+  }
+  else if (w >= 440.0 && w < 490)
+  {
+    *r = 0;
+    *g = (unsigned char) (255.0*((w - 440.0) / (490.0 - 440.0)));
+    *b = 255;
+  }
+  else if (w >= 490.0 && w < 510)
+  {  
+    *r = 0;
+    *g = 255;
+    *b = (255.0*(-(w - 510.0) / (510.0 - 490.0)));
+  }
+  else if (w >= 510.0 && w < 580.0)
+  { 
+    *r = (unsigned char)  (255*(w - 510.0) / (580.0 - 510.0));
+    *g = 255;
+    *b = 0;
+  }
+  else if (w >= 580.0 && w < 645.0)
+  { 
+    *r = 255;
+    *g = (unsigned char) (255*(-(w - 645.0) / (645.0 - 580.0)));
+    *b = 0;
+  }
+  else if (w >= 645.0 && w <= 780.0)
+  {
+    *r = 255;
+    *g = 0;
+    *b = 0;
+  }
+  else
+  {
+    *r = 0;
+    *g = 0;
+    *b = 0;
+  }
+  
+}
+//------------------------------------------------------------------------------
 inline void _ReadImageDataMemGray(unsigned char* buffer, int bufferwidth, 
                                  int bufferheight, int x, int y, 
                                  unsigned char* r, unsigned char* g, 
@@ -168,10 +220,13 @@ inline void _ReadImageDataMemGray(unsigned char* buffer, int bufferwidth,
   }
   else
   {
-    *b = (unsigned char)Clamp(value,0.0,255.0);
-    *g = *b;
-    *r = *b;
+    value = (double)Clamp(value,0.0,8000);
+    _CalcSpectrumColor(value, 0.0, 8000.00, r,g,b);
     *a = 255;
+    //*b = (unsigned char)Clamp(value,0.0,255.0);
+    //*g = *b;
+    //*r = *b;
+    //*a = 255;
   }
   
   if (value != 0)
