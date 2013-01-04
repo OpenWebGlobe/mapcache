@@ -106,7 +106,7 @@ inline void _ReadImageDataMemBGRA(unsigned char* buffer, int bufferwidth,
   *a = buffer[bufferwidth*4*y+4*x+3];
 }
 //------------------------------------------------------------------------------
-// Approximate RBG values for mapping elevation to visible 
+// Approximate RGB values for mapping elevation to visible 
 // wavelengths between 380 nm and 780nm
 // based on: http://www.physics.sfasu.edu/astro/color/spectra.html
 inline void _CalcSpectrumColor(double value, double mine, double maxe, char* r, char* g, char* b)
@@ -929,7 +929,8 @@ void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
     GDALRasterBandH hBand = GDALGetRasterBand(hDataset, 1); 
     if (hBand)
     {
-      NODATA = (float)GDALGetRasterNoDataValue(hBand, &success);  
+      NODATA = (float)GDALGetRasterNoDataValue(hBand, &success);
+      //ctx->log(ctx,MAPCACHE_NOTICE,"**NODATA Value: %f", NODATA);
     }
     
     GDALDataType rdd = GDALGetRasterDataType(hBand);
