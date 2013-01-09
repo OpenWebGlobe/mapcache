@@ -420,6 +420,9 @@ void parseFormat(mapcache_context *ctx, ezxml_t node, mapcache_cfg *config)
       return;
     }
     format = mapcache_imageio_create_mixed_format(ctx->pool,name,transparent, opaque);
+  } 
+  else if (!strcasecmp(type,"JSON")) {
+    format = mapcache_imageio_create_json_format(ctx->pool,name);
   } else {
     ctx->set_error(ctx, 400, "unknown format type %s for format \"%s\"", type, name);
     return;

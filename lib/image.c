@@ -41,11 +41,15 @@ mapcache_image* mapcache_image_create(mapcache_context *ctx)
   img->data=NULL;
   img->has_alpha = MC_ALPHA_UNKNOWN;
   img->is_blank = MC_EMPTY_UNKNOWN;
+  img->is_elevation = MC_ELEVATION_NO;
   return img;
 }
 
 int mapcache_image_has_alpha(mapcache_image *img)
 {
+  if (img->is_elevation ==  MC_ELEVATION_YES) {
+    return MC_ALPHA_NO;
+  }
   size_t i,j;
   if(img->has_alpha == MC_ALPHA_UNKNOWN) {
     unsigned char *ptr, *rptr = img->data;
@@ -72,6 +76,10 @@ int mapcache_image_has_alpha(mapcache_image *img)
 
 void mapcache_image_merge(mapcache_context *ctx, mapcache_image *base, mapcache_image *overlay)
 {
+  if (base->is_elevation ==  MC_ELEVATION_YES || overlay->is_elevation ==  MC_ELEVATION_YES) {
+    return; // merging elevation is not yet possible.
+  }
+  
   int starti,startj;
 #ifndef USE_PIXMAN
   int i,j;
@@ -324,6 +332,11 @@ void mapcache_image_metatile_split(mapcache_context *ctx, mapcache_metatile *mt)
 
 int mapcache_image_blank_color(mapcache_image* image)
 {
+  if (image->is_elevation ==  MC_ELEVATION_YES)
+  {
+    return MAPCACHE_FALSE;
+  }
+  
   if(image->is_blank == MC_EMPTY_UNKNOWN) {
     int* pixptr;
     int r,c;

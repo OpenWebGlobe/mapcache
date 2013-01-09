@@ -82,6 +82,7 @@ typedef struct mapcache_image_format_mixed mapcache_image_format_mixed;
 typedef struct mapcache_image_format_png mapcache_image_format_png;
 typedef struct mapcache_image_format_png_q mapcache_image_format_png_q;
 typedef struct mapcache_image_format_jpeg mapcache_image_format_jpeg;
+typedef struct mapcache_image_format_json mapcache_image_format_json; // would be "elevation_format"
 typedef struct mapcache_cfg mapcache_cfg;
 typedef struct mapcache_tileset mapcache_tileset;
 typedef struct mapcache_cache mapcache_cache;
@@ -354,6 +355,7 @@ struct mapcache_source_gdal {
   //apr_table_t *gdal_params; /**< GDAL parameters specified in configuration */
   GDALDatasetH *poDataset;
   mapcache_extent* extent; /**< bounding box of dataset (optional)*/
+  int elevation; /**< true if source is treated as elevation data (double boundaries)*/
 };
 #endif
 /** @} */
@@ -860,7 +862,7 @@ void mapcache_service_dispatch_request(mapcache_context *ctx,
 /** @{ */
 
 typedef enum {
-  GC_UNKNOWN, GC_PNG, GC_JPEG
+  GC_UNKNOWN, GC_PNG, GC_JPEG, GC_JSON
 } mapcache_image_format_type;
 
 typedef enum {
@@ -871,6 +873,9 @@ typedef enum {
   MC_ALPHA_UNKNOWN, MC_ALPHA_YES, MC_ALPHA_NO
 } mapcache_image_alpha_type;
 
+typedef enum {
+  MC_ELEVATION_UNKNOWN, MC_ELEVATION_YES, MC_ELEVATION_NO
+} mapcache_image_elevation_type;
 
 /**\class mapcache_image
  * \brief representation of an RGBA image
@@ -878,12 +883,13 @@ typedef enum {
  * to access a pixel at position x,y, you should use the #GET_IMG_PIXEL macro
  */
 struct mapcache_image {
-  unsigned char *data; /**< pointer to the beginning of image data, stored in rgba order */
+  unsigned char *data; /**< pointer to the beginning of image data, stored in rgba order or if elevation, as 32-bit float*/ 
   size_t w; /**< width of the image */
   size_t h; /**< height of the image */
   size_t stride; /**< stride of an image row */
   mapcache_image_blank_type is_blank;
   mapcache_image_alpha_type has_alpha;
+  mapcache_image_elevation_type is_elevation;
 
 };
 
@@ -1541,6 +1547,35 @@ struct mapcache_image_format_png_q {
   mapcache_image_format_png format;
   int ncolors; /**< number of colors used in quantization, 2-256 */
 };
+
+
+/**\class mapcache_image_format_json
+ * \brief JSON elevation format for OpenWebGlobe
+ * \extends mapcache_image_format
+ */
+struct mapcache_image_format_json {
+  mapcache_image_format format;
+  int triangulated; // 0: grid, 1: delaunay triangulation
+};
+
+/**
+ * \brief create elevation format (JSON) for OpenWebGlobe elevation data
+ * \memberof mapcache_image_format_json
+ * @param pool
+ * @param name
+ * @return
+ */
+mapcache_image_format* mapcache_imageio_create_json_format(apr_pool_t *pool, char *name);
+
+/**
+ * @param r
+ * @param buffer
+ * @return
+ */
+mapcache_image* _mapcache_imageio_json_decode(mapcache_context *ctx, mapcache_buffer *buffer);
+
+void _mapcache_imageio_json_decode_to_image(mapcache_context *ctx, mapcache_buffer *buffer,
+    mapcache_image *image);
 
 /**
  * @param r

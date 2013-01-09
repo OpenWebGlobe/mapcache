@@ -67,6 +67,8 @@ mapcache_image* mapcache_imageio_decode(mapcache_context *ctx, mapcache_buffer *
     return _mapcache_imageio_png_decode(ctx,buffer);
   } else if(type == GC_JPEG) {
     return _mapcache_imageio_jpeg_decode(ctx,buffer);
+  } else if(type == GC_JSON) {
+    return _mapcache_imageio_json_decode(ctx,buffer);  
   } else {
     ctx->set_error(ctx, 500, "mapcache_imageio_decode: unrecognized image format");
     return NULL;
@@ -95,6 +97,8 @@ void mapcache_imageio_decode_to_image(mapcache_context *ctx, mapcache_buffer *bu
     _mapcache_imageio_png_decode_to_image(ctx,buffer,image);
   } else if(type == GC_JPEG) {
     _mapcache_imageio_jpeg_decode_to_image(ctx,buffer,image);
+  } else if(type == GC_JSON) {
+    _mapcache_imageio_json_decode_to_image(ctx,buffer,image);
   } else {
     ctx->set_error(ctx, 500, "mapcache_imageio_decode: unrecognized image format");
   }
