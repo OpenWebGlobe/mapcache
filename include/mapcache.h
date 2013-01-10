@@ -276,6 +276,7 @@ struct mapcache_source {
   mapcache_extent data_extent; /**< extent in which this source can produce data */
   mapcache_source_type type;
   apr_table_t *metadata;
+  int is_elevation; // FALSE: treat as image data, TRUE: treat as elevation data
 
   apr_array_header_t *info_formats;
   /**
@@ -1201,6 +1202,7 @@ struct mapcache_grid {
   mapcache_extent extent;
   mapcache_unit unit;
   int tile_sx, tile_sy; /**<width and height of a tile in pixels */
+  int elevationblock;  /**< width and height of an elevation tile*/
   mapcache_grid_level **levels;
   apr_table_t *metadata;
   mapcache_grid_origin origin;

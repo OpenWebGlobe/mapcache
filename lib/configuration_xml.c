@@ -211,6 +211,24 @@ void parseGrid(mapcache_context *ctx, ezxml_t node, mapcache_cfg *config)
     grid->tile_sx = sizes[0];
     grid->tile_sy = sizes[1];
   }
+  
+  if ((cur_node = ezxml_child(node,"elevationblock")) != NULL) {
+    int elevationblock; 
+    value = apr_pstrdup(ctx->pool,cur_node->txt);
+    elevationblock = atoi(value);
+    if (elevationblock == 2 || elevationblock == 3 || elevationblock == 5 ||
+        elevationblock == 9 || elevationblock == 17 || elevationblock == 33) {
+      grid->elevationblock = elevationblock;
+      
+    } else {
+      ctx->set_error(ctx, 400, "Error in elevation block definition in grid %s"
+                      "(expecting one of the following size: 2,3,5,9,17,33) and not %s"
+                     ,grid->name, value);
+    }
+      
+      
+  }
+  
 
   if ((cur_node = ezxml_child(node,"resolutions")) != NULL) {
     int nvalues;

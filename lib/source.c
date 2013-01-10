@@ -36,6 +36,7 @@ void mapcache_source_init(mapcache_context *ctx, mapcache_source *source)
   mapcache_extent tmp_extent = {-1,-1,-1,-1};
   source->data_extent = tmp_extent;
   source->metadata = apr_table_make(ctx->pool,3);
+  source->is_elevation = FALSE;
 }
 /* vim: ts=2 sts=2 et sw=2
 */

@@ -50,6 +50,7 @@ int mapcache_image_has_alpha(mapcache_image *img)
   if (img->is_elevation ==  MC_ELEVATION_YES) {
     return MC_ALPHA_NO;
   }
+  
   size_t i,j;
   if(img->has_alpha == MC_ALPHA_UNKNOWN) {
     unsigned char *ptr, *rptr = img->data;
@@ -268,65 +269,128 @@ void mapcache_image_copy_resampled_bilinear(mapcache_context *ctx, mapcache_imag
 
 void mapcache_image_metatile_split(mapcache_context *ctx, mapcache_metatile *mt)
 {
-  if(mt->map.tileset->format) {
-    /* the tileset has a format defined, we will use it to encode the data */
-    mapcache_image *tileimg;
-    mapcache_image *metatile;
-    int i,j;
-    int sx,sy;
-    if(mt->map.raw_image) {
-      metatile = mt->map.raw_image;
-    } else {
-      metatile = mapcache_imageio_decode(ctx, mt->map.encoded_data);
-    }
-    if(!metatile) {
-      ctx->set_error(ctx, 500, "failed to load image data from metatile");
-      return;
-    }
-    for(i=0; i<mt->metasize_x; i++) {
-      for(j=0; j<mt->metasize_y; j++) {
-        tileimg = mapcache_image_create(ctx);
-        tileimg->w = mt->map.grid_link->grid->tile_sx;
-        tileimg->h = mt->map.grid_link->grid->tile_sy;
-        tileimg->stride = metatile->stride;
-        switch(mt->map.grid_link->grid->origin) {
-          case MAPCACHE_GRID_ORIGIN_BOTTOM_LEFT:
-            sx = mt->map.tileset->metabuffer + i * tileimg->w;
-            sy = mt->map.height - (mt->map.tileset->metabuffer + (j+1) * tileimg->h);
-            break;
-          case MAPCACHE_GRID_ORIGIN_TOP_LEFT:
-            sx = mt->map.tileset->metabuffer + i * tileimg->w;
-            sy = mt->map.tileset->metabuffer + j * tileimg->h;
-            break;
-          case MAPCACHE_GRID_ORIGIN_BOTTOM_RIGHT: /* FIXME not implemented */
-            sx = mt->map.tileset->metabuffer + i * tileimg->w;
-            sy = mt->map.height - (mt->map.tileset->metabuffer + (j+1) * tileimg->h);
-            break;
-          case MAPCACHE_GRID_ORIGIN_TOP_RIGHT:  /* FIXME not implemented */
-            sx = mt->map.tileset->metabuffer + i * tileimg->w;
-            sy = mt->map.height - (mt->map.tileset->metabuffer + (j+1) * tileimg->h);
-            break;
-        }
-        tileimg->data = &(metatile->data[sy*metatile->stride + 4 * sx]);
-        if(mt->map.tileset->watermark) {
-          mapcache_image_merge(ctx,tileimg,mt->map.tileset->watermark);
+  if (mt->map.raw_image->is_elevation == MC_ELEVATION_YES)
+  {
+    if(mt->map.tileset->format) {
+      /* the tileset has a format defined, we will use it to encode the data */
+      mapcache_image *tileimg;
+      mapcache_image *metatile;
+      int i,j;
+      int sx,sy;
+      if(mt->map.raw_image) {
+        metatile = mt->map.raw_image;
+      } else {
+        metatile = mapcache_imageio_decode(ctx, mt->map.encoded_data);
+      }
+      if(!metatile) {
+        ctx->set_error(ctx, 500, "failed to load image data from metatile");
+        return;
+      }
+      for(i=0; i<mt->metasize_x; i++) {
+        for(j=0; j<mt->metasize_y; j++) {
+          tileimg = mapcache_image_create(ctx);
+          tileimg->is_elevation = MC_ELEVATION_YES;
+          tileimg->w = mt->map.raw_image->w;
+          tileimg->h = mt->map.raw_image->h;
+          tileimg->stride = mt->map.raw_image->stride;
+          switch(mt->map.grid_link->grid->origin) {
+            case MAPCACHE_GRID_ORIGIN_BOTTOM_LEFT:
+              sx = mt->map.tileset->metabuffer + i * mt->map.grid_link->grid->tile_sx;
+              sy = mt->map.height - (mt->map.tileset->metabuffer + (j+1) * mt->map.grid_link->grid->tile_sy);
+              break;
+            case MAPCACHE_GRID_ORIGIN_TOP_LEFT:
+              sx = mt->map.tileset->metabuffer + i * mt->map.grid_link->grid->tile_sx;
+              sy = mt->map.tileset->metabuffer + j * mt->map.grid_link->grid->tile_sy;
+              break;
+            case MAPCACHE_GRID_ORIGIN_BOTTOM_RIGHT: /* FIXME not implemented */
+              sx = mt->map.tileset->metabuffer + i * mt->map.grid_link->grid->tile_sx;
+              sy = mt->map.height - (mt->map.tileset->metabuffer + (j+1) * mt->map.grid_link->grid->tile_sy);
+              break;
+            case MAPCACHE_GRID_ORIGIN_TOP_RIGHT:  /* FIXME not implemented */
+              sx = mt->map.tileset->metabuffer + i * mt->map.grid_link->grid->tile_sx;
+              sy = mt->map.height - (mt->map.tileset->metabuffer + (j+1) * mt->map.grid_link->grid->tile_sy);
+              break;
+          }
+          tileimg->data = &(metatile->data[sy*metatile->stride + 4 * sx]);
+          mt->tiles[i*mt->metasize_y+j].raw_image = tileimg;
           GC_CHECK_ERROR(ctx);
         }
-        mt->tiles[i*mt->metasize_y+j].raw_image = tileimg;
-        GC_CHECK_ERROR(ctx);
       }
+    } else {
+  #ifdef DEBUG
+      if(mt->map.tileset->metasize_x != 1 ||
+          mt->map.tileset->metasize_y != 1 ||
+          mt->map.tileset->metabuffer != 0 ||
+          !mt->map.encoded_data) {
+        ctx->set_error(ctx, 500, "##### BUG ##### using a metatile with no format");
+        return;
+      }
+  #endif
+      mt->tiles[0].encoded_data = mt->map.encoded_data;
     }
-  } else {
-#ifdef DEBUG
-    if(mt->map.tileset->metasize_x != 1 ||
-        mt->map.tileset->metasize_y != 1 ||
-        mt->map.tileset->metabuffer != 0 ||
-        !mt->map.encoded_data) {
-      ctx->set_error(ctx, 500, "##### BUG ##### using a metatile with no format");
-      return;
+  }
+  else // IMAGE
+  {
+    if(mt->map.tileset->format) {
+      /* the tileset has a format defined, we will use it to encode the data */
+      mapcache_image *tileimg;
+      mapcache_image *metatile;
+      int i,j;
+      int sx,sy;
+      if(mt->map.raw_image) {
+        metatile = mt->map.raw_image;
+      } else {
+        metatile = mapcache_imageio_decode(ctx, mt->map.encoded_data);
+      }
+      if(!metatile) {
+        ctx->set_error(ctx, 500, "failed to load image data from metatile");
+        return;
+      }
+      for(i=0; i<mt->metasize_x; i++) {
+        for(j=0; j<mt->metasize_y; j++) {
+          tileimg = mapcache_image_create(ctx);
+          tileimg->w = mt->map.grid_link->grid->tile_sx;
+          tileimg->h = mt->map.grid_link->grid->tile_sy;
+          tileimg->stride = metatile->stride;
+          switch(mt->map.grid_link->grid->origin) {
+            case MAPCACHE_GRID_ORIGIN_BOTTOM_LEFT:
+              sx = mt->map.tileset->metabuffer + i * tileimg->w;
+              sy = mt->map.height - (mt->map.tileset->metabuffer + (j+1) * tileimg->h);
+              break;
+            case MAPCACHE_GRID_ORIGIN_TOP_LEFT:
+              sx = mt->map.tileset->metabuffer + i * tileimg->w;
+              sy = mt->map.tileset->metabuffer + j * tileimg->h;
+              break;
+            case MAPCACHE_GRID_ORIGIN_BOTTOM_RIGHT: /* FIXME not implemented */
+              sx = mt->map.tileset->metabuffer + i * tileimg->w;
+              sy = mt->map.height - (mt->map.tileset->metabuffer + (j+1) * tileimg->h);
+              break;
+            case MAPCACHE_GRID_ORIGIN_TOP_RIGHT:  /* FIXME not implemented */
+              sx = mt->map.tileset->metabuffer + i * tileimg->w;
+              sy = mt->map.height - (mt->map.tileset->metabuffer + (j+1) * tileimg->h);
+              break;
+          }
+          tileimg->data = &(metatile->data[sy*metatile->stride + 4 * sx]);
+          if(mt->map.tileset->watermark) {
+            mapcache_image_merge(ctx,tileimg,mt->map.tileset->watermark);
+            GC_CHECK_ERROR(ctx);
+          }
+          mt->tiles[i*mt->metasize_y+j].raw_image = tileimg;
+          GC_CHECK_ERROR(ctx);
+        }
+      }
+    } else {
+  #ifdef DEBUG
+      if(mt->map.tileset->metasize_x != 1 ||
+          mt->map.tileset->metasize_y != 1 ||
+          mt->map.tileset->metabuffer != 0 ||
+          !mt->map.encoded_data) {
+        ctx->set_error(ctx, 500, "##### BUG ##### using a metatile with no format");
+        return;
+      }
+  #endif
+      mt->tiles[0].encoded_data = mt->map.encoded_data;
     }
-#endif
-    mt->tiles[0].encoded_data = mt->map.encoded_data;
   }
 }
 

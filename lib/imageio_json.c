@@ -30,6 +30,25 @@
 #include "mapcache.h"
 #include <apr_strings.h>
 
+static char* json  =
+  "{"
+  "   \"Version\": \"1.1\",\n"
+  "   \"Triangulation\": \"grid\",\n"
+  "   \"GridSize\": %i,\n"
+  "   \"VertexSemantic\": \"pt\",\n"
+  "   \"IndexSemantic\": \"TRIANGLES\",\n"
+  "   \"Vertices\": [%s],\n"
+  "   \"Offset\": [%lf, %lf, %lf],\n"
+  "   \"BoundingBox\": [[%lf, %lf, %lf],[%lf,%lf,%lf]],\n"
+  "   \"HeightMap\": [%s]\n"
+  "}";
+// Integer: Gridsize  (2,3,5,9,17)
+// String:  Comma separated vertex list
+// Floats: Offset x, Offset y, Offset z
+// Floats: bbxmin, bbymin, bbzmin, bbxmax, bbymax, bbzmax
+// String: Comma separated heightmap
+
+
 //------------------------------------------------------------------------------
 static mapcache_buffer* _mapcache_imageio_json_create_empty(mapcache_context *ctx, mapcache_image_format *format,
     size_t width, size_t height, unsigned int color)
@@ -39,7 +58,44 @@ static mapcache_buffer* _mapcache_imageio_json_create_empty(mapcache_context *ct
 //------------------------------------------------------------------------------
 mapcache_buffer* _mapcache_imageio_json_encode(mapcache_context *ctx, mapcache_image *img, mapcache_image_format *format)
 {
-  return NULL;
+  char *vertexlist = "1,2,3,4,5"; // test...
+  char *heightmap = "1,2,3,4,5";
+  double offsetx, offsety, offsetz;
+  double bbminx, bbminy, bbminz, bbmaxx, bbmaxy, bbmaxz;
+  int gridsize = img->w;
+  mapcache_image_format_json* format_json = (mapcache_image_format_json*)format;
+ 
+  if (img->is_elevation != MC_ELEVATION_YES)
+  {
+    ctx->set_error(ctx,500,"can't convert non elevation data to json");
+    return NULL;
+  }
+  
+  
+  offsetx = 0.123456789012345678;
+  offsety = 0.123123123123123123;
+  offsetz = 0.898989898989898989;
+  
+  bbminx = 0.1;
+  bbminy = 0.2;
+  bbminz = 0.15;
+  bbmaxx = 0.2;
+  bbmaxy = 0.4;
+  bbmaxz = 0.3;
+  
+  char *json = apr_psprintf(ctx->pool, json,
+                            gridsize,
+                            vertexlist,
+                            offsetx, offsety, offsetz,
+                            bbminx, bbminy, bbminz, bbmaxx, bbmaxy, bbmaxz,
+                            heightmap);
+  
+  
+  size_t size = strlen(json);
+  mapcache_buffer *buffer = mapcache_buffer_create(size, ctx->pool);
+  mapcache_buffer_append(buffer, size, json);
+ 
+  return buffer;
 }
 //------------------------------------------------------------------------------
 mapcache_image* _mapcache_imageio_json_decode(mapcache_context *ctx, mapcache_buffer *buffer)

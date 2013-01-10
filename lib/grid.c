@@ -40,6 +40,7 @@ mapcache_grid* mapcache_grid_create(apr_pool_t *pool)
   grid->srs_aliases = apr_array_make(pool,0,sizeof(char*));
   grid->unit = MAPCACHE_UNIT_METERS;
   grid->origin = MAPCACHE_GRID_ORIGIN_BOTTOM_LEFT;
+  grid->elevationblock = 17;
   return grid;
 }
 
