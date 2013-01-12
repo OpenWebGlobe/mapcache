@@ -245,6 +245,76 @@ inline void _ReadImageDataMemGray(unsigned char* buffer, int bufferwidth,
   }
  
 }
+//
+//------------------------------------------------------------------------------
+inline void _ReadImageDataMemElv(unsigned char* buffer, int bufferwidth, 
+                                 int bufferheight, int x, int y, 
+                                 unsigned char* r, unsigned char* g, 
+                                 unsigned char* b, unsigned char* a, float NODATA, int datatype)
+{
+  if (x<0 || y<0 || x>bufferwidth-1 || y>bufferheight-1) 
+  { 
+     *b=0; *g=0; *r=0; *a=0;
+     return;
+  }
+  
+  unsigned int ui_value;
+  int i_value;
+  float f_value;
+  double d_value;
+  unsigned short us_value;
+  short s_value;
+  char b_value;
+  
+  float value = 0.0f;
+  
+  switch(datatype)
+  {
+    case 1:  // GDT_UInt32
+      ui_value = ((unsigned int*)buffer)[bufferwidth*y+x];
+      value = (float) ui_value;
+      break;
+    case 2:  // GDT_Int32
+      i_value = ((int*)buffer)[bufferwidth*y+x];
+      value = (float) i_value;
+      break;
+    case 3:  // GDT_Float32
+      f_value = ((float*)buffer)[bufferwidth*y+x];
+      value = f_value;
+      break;
+    case 4:  // GDT_Float64
+      d_value = ((double*)buffer)[bufferwidth*y+x];
+      value = (float) d_value;
+      break;
+    case 5: 
+      us_value = ((unsigned short*)buffer)[bufferwidth*y+x];
+      value = (float) us_value;
+    break;
+    case 6:  
+      s_value = ((short*)buffer)[bufferwidth*y+x];
+      value = (float) s_value;
+    break;
+    case 7:  
+      b_value = ((char*)buffer)[bufferwidth*y+x];
+      value = (float) b_value;
+    break;
+    default:
+      return;
+  }
+ 
+  
+  if (fabs(value-NODATA)<GM_EPSILONFLT)
+  {
+    value = -99999.0f; // official "no data value"
+  }
+
+  // floating point to RGBA conversion...
+  unsigned char* val_chr = (unsigned char*)&value;
+  *r = val_chr[0];
+  *g = val_chr[1];
+  *b = val_chr[2];
+  *a = val_chr[3];
+}
 //------------------------------------------------------------------------------
 inline int TestRectRectIntersect(double ulx1,double uly1,double lrx1,double lry1,   
                                  double ulx2,double uly2,double lrx2,double lry2)
@@ -554,6 +624,8 @@ inline void CreateMapElevation(mapcache_context *ctx, mapcache_map *map,
   map->raw_image->h = elevationblock;
   map->raw_image->stride = 4 * elevationblock;
   map->raw_image->data = malloc(elevationblock*elevationblock*4);
+  apr_pool_cleanup_register(ctx->pool, map->raw_image->data,(void*)free, apr_pool_cleanup_null);
+  
   int x,y;
   for (y=0;y<elevationblock;y++)
   {
@@ -586,7 +658,7 @@ inline void CreateMapElevation(mapcache_context *ctx, mapcache_map *map,
               xx *= scalex;
               yy *= scaley;
             
-              _ReadImageDataMemGray(pData, sourcetilewidth, 
+              _ReadImageDataMemElv(pData, sourcetilewidth, 
                                               sourcetileheight, (int)(xx), (int)(yy), 
                                               &r,&g,&b,&a, NODATA, datatype);
             }
@@ -608,15 +680,15 @@ inline void CreateMapElevation(mapcache_context *ctx, mapcache_map *map,
           xx *= scalex;
           yy *= scaley;
          
-          _ReadImageDataMemGray(pData, sourcetilewidth, 
+          _ReadImageDataMemElv(pData, sourcetilewidth, 
                                           sourcetileheight, (int)(xx), (int)(yy), 
                                           &r,&g,&b,&a, NODATA, datatype);
        }
        
-       map->raw_image->data[4*map->width*y+4*x+0] = b;
-       map->raw_image->data[4*map->width*y+4*x+1] = g;
-       map->raw_image->data[4*map->width*y+4*x+2] = r;
-       map->raw_image->data[4*map->width*y+4*x+3] = a;
+       map->raw_image->data[4*elevationblock*y+4*x+0] = b;
+       map->raw_image->data[4*elevationblock*y+4*x+1] = g;
+       map->raw_image->data[4*elevationblock*y+4*x+2] = r;
+       map->raw_image->data[4*elevationblock*y+4*x+3] = a;
      }
   }
 }
@@ -1133,7 +1205,7 @@ void _mapcache_source_gdal_render_map_image(mapcache_context *ctx, mapcache_map 
  */
 void _mapcache_source_gdal_render_map_elevation(mapcache_context *ctx, mapcache_map *map)
 {
-  /*int elevationblock = map->grid_link->grid->elevationblock;
+  int elevationblock = 257; //map->grid_link->grid->elevationblock;
   double minx, miny, maxx, maxy;
   double minx_data_wgs84, miny_data_wgs84, maxx_data_wgs84, maxy_data_wgs84;
 
@@ -1539,54 +1611,32 @@ void _mapcache_source_gdal_render_map_elevation(mapcache_context *ctx, mapcache_
   // Close Dataset
   GDALClose( hDataset );
 
-  if (bands == 1)
-  {
-    CreateMapElevation(ctx, map, &oSrcDataset, &oDstDataset, 
+
+  CreateMapElevation(ctx, map, &oSrcDataset, &oDstDataset, 
                  sourcetilewidth, sourcetileheight, gdal, pCTBack, pCTWGS84,
                  minx_data_wgs84,miny_data_wgs84,maxx_data_wgs84,maxy_data_wgs84,
                  nXOff, nYOff, scalex, scaley, pData, NODATA, datatype, elevationblock);
-  }
-  
-  
-   map->raw_image = mapcache_image_create(ctx);
+    
+     
+    
+   /* map->raw_image = mapcache_image_create(ctx);
     map->raw_image->is_elevation = MC_ELEVATION_YES;
     map->raw_image->w = elevationblock;
     map->raw_image->h = elevationblock;
     map->raw_image->stride = 4 * elevationblock;
     map->raw_image->data = malloc(elevationblock*elevationblock*4);
-    //map->raw_image->is_blank = MC_EMPTY_YES;
-    memset(map->raw_image->data, 127, elevationblock*elevationblock*4);
-   */
-   
-    int width = 17; //map->width;
-    int height = 17; //map->height;
-
-    map->raw_image = mapcache_image_create(ctx);
-    map->raw_image->is_elevation = MC_ELEVATION_YES;
-    map->raw_image->w = width;
-    map->raw_image->h = height;
-    map->raw_image->stride = 4 * width;
-    map->raw_image->data = malloc(width*height*4);
+    memset(map->raw_image->data, 0, elevationblock*elevationblock*4);
+    apr_pool_cleanup_register(ctx->pool, map->raw_image->data,(void*)free, apr_pool_cleanup_null);*/
     
-    int xx,yy;
-    for (yy=0;yy<map->raw_image->h;yy++)
-    {
-      for (xx=0;xx<map->raw_image->w;xx++)
-      {
-        map->raw_image->data[yy*map->raw_image->stride+4*xx+0] = yy % 255;
-        map->raw_image->data[yy*map->raw_image->stride+4*xx+1] = (xx*yy) % 255;
-        map->raw_image->data[yy*map->raw_image->stride+4*xx+2] = xx % 255;
-        map->raw_image->data[yy*map->raw_image->stride+4*xx+3] = 127;
-      }
-    }
+ 
     
   // free SRS
-  //OCTDestroyCoordinateTransformation(pCT);   
-  //OCTDestroyCoordinateTransformation(pCTBack); 
-  //OSRDestroySpatialReference(dstref);
-  //OSRDestroySpatialReference(srcref);
+  OCTDestroyCoordinateTransformation(pCT);   
+  OCTDestroyCoordinateTransformation(pCTBack); 
+  OSRDestroySpatialReference(dstref);
+  OSRDestroySpatialReference(srcref);
   
-  apr_pool_cleanup_register(ctx->pool, map->raw_image->data,(void*)free, apr_pool_cleanup_null);
+ 
   
 }
 //------------------------------------------------------------------------------
