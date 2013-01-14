@@ -174,6 +174,18 @@ static void json_append_cstr(json_string *s, const char *str)
   s->size += len;
 }
 //----------------------------------------------------------------------------
+static void json_append_int(json_string *s, int value)
+{
+  snprintf(s->tmp, 32, "%i", value);
+  json_append_cstr(s, s->tmp);
+}
+//----------------------------------------------------------------------------
+static void json_append_comma_int(json_string *s, int value)
+{
+  snprintf(s->tmp, 32, ",%i", value);
+  json_append_cstr(s, s->tmp);
+}
+//----------------------------------------------------------------------------
 static void json_append_float(json_string *s, float value)
 {
   snprintf(s->tmp, 32, "%.7f", value);
@@ -249,6 +261,14 @@ void _gen_json(json_string* str, float* heightmap, int gridsize, double x0, doub
   //------------------
   
   json_append_cstr(str, "  \"Version\": \"1.1\",\n");
+  
+  //------------------
+  // Generate GRIDSIZE
+  //------------------
+  
+  json_append_cstr(str, "  \"GridSize\": ");
+  json_append_int(str, gridsize);
+  json_append_cstr(str, ",\n");
 
   //-------------------------
   // Generate VERTEX SEMANTIC
