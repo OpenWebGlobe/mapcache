@@ -415,6 +415,14 @@ void _gen_json(json_string* str, float* heightmap, int gridsize, double x0, doub
   json_append_comma_double(str, bbmaxz);
   json_append_cstr(str, "]],\n"); // end BoundingBox
   
+  //----------------------
+  // Generate CURTAININDEX
+  //----------------------
+  
+  json_append_cstr(str, "  \"CurtainIndex\": ");
+  json_append_int(str, gridsize*gridsize);
+  json_append_cstr(str, ",\n");
+  
   
   //-------------------
   // Generate HEIGHTMAP
