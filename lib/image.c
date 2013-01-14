@@ -42,6 +42,7 @@ mapcache_image* mapcache_image_create(mapcache_context *ctx)
   img->has_alpha = MC_ALPHA_UNKNOWN;
   img->is_blank = MC_EMPTY_UNKNOWN;
   img->is_elevation = MC_ELEVATION_NO;
+  img->x0 = 0; img->y0 = 0; img->x1 = 0; img->y1 = 0;
   return img;
 }
 

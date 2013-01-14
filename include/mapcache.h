@@ -888,6 +888,7 @@ struct mapcache_image {
   size_t w; /**< width of the image */
   size_t h; /**< height of the image */
   size_t stride; /**< stride of an image row */
+  double x0, y0, x1, y1; /**< image boundary */
   mapcache_image_blank_type is_blank;
   mapcache_image_alpha_type has_alpha;
   mapcache_image_elevation_type is_elevation;

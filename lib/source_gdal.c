@@ -274,7 +274,7 @@ inline void _ReadImageDataMemElv(unsigned char* buffer, int bufferwidth,
       ui_value = ((unsigned int*)buffer)[bufferwidth*y+x];
       value = (float) ui_value;
       break;
-    case 2:  // GDT_Int32
+    case 2:  // GDT_Int32f
       i_value = ((int*)buffer)[bufferwidth*y+x];
       value = (float) i_value;
       break;
@@ -623,6 +623,10 @@ inline void CreateMapElevation(mapcache_context *ctx, mapcache_map *map,
   map->raw_image->w = elevationblock;
   map->raw_image->h = elevationblock;
   map->raw_image->stride = 4 * elevationblock;
+  map->raw_image->x0 = pDstDataset->ulx;
+  map->raw_image->y0 = pDstDataset->uly;
+  map->raw_image->x1 = pDstDataset->lrx;
+  map->raw_image->y1 = pDstDataset->lry;
   map->raw_image->data = malloc(elevationblock*elevationblock*4);
   apr_pool_cleanup_register(ctx->pool, map->raw_image->data,(void*)free, apr_pool_cleanup_null);
   
