@@ -36,9 +36,16 @@
 #include <stdarg.h>
 #include <math.h>
 
-#ifndef M_PI
-#    define M_PI 3.14159265358979323846
+#ifndef MAX
+#define MAX(a,b) (((a) > (b)) ? (a) : (b))
 #endif
+#ifndef MIN
+#define MIN(a,b) (((a) < (b)) ? (a) : (b))
+#endif
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 //------------------------------------------------------------------------------
 // very simple high performance string handling for JSON strings.
 // dynamic strings based on: http://locklessinc.com/articles/dynamic_cstrings/
@@ -225,6 +232,12 @@ void _gen_json(json_string* str, float* heightmap, int gridsize, double x0, doub
 {
   
   double offsetx, offsety, offsetz;
+  double bbminx = 1e20;
+  double bbminy = 1e20; 
+  double bbminz = 1e20; 
+  double bbmaxx = -1e20; 
+  double bbmaxy = -1e20;
+  double bbmaxz = -1e20;
   
   //-----------
   // START JSON
@@ -258,8 +271,8 @@ void _gen_json(json_string* str, float* heightmap, int gridsize, double x0, doub
   double dH = (y1-y0)/(gridsize-1); // for x positions
   double dW = (x1-x0)/(gridsize-1); // for y positions
   float fdX = 1.0 / (gridsize-1);   // for texture coordinates (u,v)
-  int x, y;
    
+  int x,y;
   for (y=0;y<gridsize;y++)
   {
     for (x=0;x<gridsize;x++)
@@ -267,10 +280,17 @@ void _gen_json(json_string* str, float* heightmap, int gridsize, double x0, doub
       double x_coord = x0 + x*dW;
       double y_coord = y0 + y*dH;
      
-      double elevation = 0; // #todo: read from heightmap
+      double elevation = heightmap[y*gridsize+x];
          
       _MercatorToWGS84(x_coord,y_coord,&lng,&lat);
       _WGS84ToCartesian(lng, lat, elevation, &x_cart, &y_cart, &z_cart);
+      
+      bbminx = MIN(bbminx, x_cart);
+      bbminy = MIN(bbminy, y_cart);
+      bbminz = MIN(bbminz, z_cart);
+      bbmaxx = MAX(bbmaxx, x_cart);
+      bbmaxy = MAX(bbmaxy, y_cart);
+      bbmaxz = MAX(bbmaxz, z_cart);
          
       if (x==0 && y==0)
       {
@@ -315,6 +335,21 @@ void _gen_json(json_string* str, float* heightmap, int gridsize, double x0, doub
   json_append_comma_double(str, offsetz);
   json_append_cstr(str, "],\n"); // end Offset
   
+  //----------------------
+  // Generate BOUNDING BOX
+  //----------------------
+  
+  json_append_cstr(str, "  \"BoundingBox\": [[");
+  json_append_double(str, bbminx);
+  json_append_comma_double(str, bbminy);
+  json_append_comma_double(str, bbminz);
+  json_append_cstr(str, "],["); // end BoundingBox
+  json_append_double(str, bbmaxx);
+  json_append_comma_double(str, bbmaxy);
+  json_append_comma_double(str, bbmaxz);
+  json_append_cstr(str, "]],\n"); // end BoundingBox
+  
+  
   //-------------------
   // Generate HEIGHTMAP
   //-------------------
@@ -335,7 +370,7 @@ void _gen_json(json_string* str, float* heightmap, int gridsize, double x0, doub
     
   }
   
-  json_append_cstr(str, "],\n"); // end HeightMap
+  json_append_cstr(str, "]\n"); // end HeightMap
  
   //---------------
   // TERMINATE JSON
@@ -343,8 +378,6 @@ void _gen_json(json_string* str, float* heightmap, int gridsize, double x0, doub
   
   json_append_cstr(str, "}\n");
 }
-
-//------------------------------------------------------------------------------
 //------------------------------------------------------------------------------
 static mapcache_buffer* _mapcache_imageio_json_create_empty(mapcache_context *ctx, mapcache_image_format *format,
     size_t width, size_t height, unsigned int color)
