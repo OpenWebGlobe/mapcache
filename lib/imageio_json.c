@@ -250,6 +250,7 @@ void _gen_json(json_string* str, float* heightmap, int gridsize, double x0, doub
   double bbmaxx = -1e20; 
   double bbmaxy = -1e20;
   double bbmaxz = -1e20;
+  int i,j,x,y;
   
   //-----------
   // START JSON
@@ -292,7 +293,6 @@ void _gen_json(json_string* str, float* heightmap, int gridsize, double x0, doub
   double dW = (x1-x0)/(gridsize-1); // for y positions
   float fdX = 1.0 / (gridsize-1);   // for texture coordinates (u,v)
    
-  int x,y;
   for (y=0;y<gridsize;y++)
   {
     for (x=0;x<gridsize;x++)
@@ -340,6 +340,52 @@ void _gen_json(json_string* str, float* heightmap, int gridsize, double x0, doub
   
   json_append_cstr(str, "],\n"); // end Vertices
   
+  //-----------------
+  // Generate INDICES
+  //------------------
+  
+  json_append_cstr(str, "  \"Indices\": [");
+  
+
+  for (j=0;j<gridsize-1;j++)
+  {
+    for (i=0;i<gridsize-1;i++)
+    {
+      /*  a    b
+          +-- -+
+          |  / |    Triangles: acb, bcd
+          |/   |
+          +----+
+          c    d
+      */ 
+      int a,b,c,d;
+      
+      a = i+j*gridsize;
+      b = a+1;
+      c = a+gridsize;
+      d = c+1;
+      
+      if (i==0 && j==0)
+      {
+        json_append_int(str,a);
+      }
+      else
+      {
+        json_append_comma_int(str,a);
+      }
+      
+      json_append_comma_int(str,c);
+      json_append_comma_int(str,b);
+      json_append_comma_int(str,b);
+      json_append_comma_int(str,c);
+      json_append_comma_int(str,d); 
+    }
+  }
+   
+  
+  json_append_cstr(str, "],\n"); // end Indices
+  
+  
   //------------------------
   // Generate INDEX SEMANTIC
   //------------------------
@@ -376,7 +422,6 @@ void _gen_json(json_string* str, float* heightmap, int gridsize, double x0, doub
   
   json_append_cstr(str, "  \"HeightMap\": [");
   
-  int i;
   for (i=0;i<gridsize*gridsize;i++)
   {
     if (i==0)
