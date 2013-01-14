@@ -30,6 +30,9 @@
 #include "mapcache.h"
 #include <apr_strings.h>
 
+
+//------------------------------------------------------------------------------
+// template for elevation json:
 static char* json  =
   "{"
   "   \"Version\": \"1.1\",\n"
@@ -38,8 +41,8 @@ static char* json  =
   "   \"VertexSemantic\": \"pt\",\n"
   "   \"IndexSemantic\": \"TRIANGLES\",\n"
   "   \"Vertices\": [%s],\n"
-  "   \"Offset\": [%lf, %lf, %lf],\n"
-  "   \"BoundingBox\": [[%lf, %lf, %lf],[%lf,%lf,%lf]],\n"
+  "   \"Offset\": [%.15lf, %.15lf, %.15lf],\n"
+  "   \"BoundingBox\": [[%.15lf, %.15lf, %.15lf],[%.15lf,%.15lf,%.15lf]],\n"
   "   \"HeightMap\": [%s]\n"
   "}";
 // Integer: Gridsize  (2,3,5,9,17)
@@ -99,7 +102,9 @@ mapcache_buffer* _mapcache_imageio_json_encode(mapcache_context *ctx, mapcache_i
 }
 //------------------------------------------------------------------------------
 mapcache_image* _mapcache_imageio_json_decode(mapcache_context *ctx, mapcache_buffer *buffer)
-{
+{  
+ 
+  
   return NULL;
 }
 //------------------------------------------------------------------------------
