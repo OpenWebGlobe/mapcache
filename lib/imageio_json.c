@@ -270,6 +270,17 @@ void _gen_json(json_string* str, float* heightmap, int gridsize, double x0, doub
   json_append_cstr(str, "  \"GridSize\": ");
   json_append_int(str, gridsize);
   json_append_cstr(str, ",\n");
+  
+  //----------------
+  // Generate BOUNDS
+  //----------------
+  
+  json_append_cstr(str, "  \"Bounds\": [");
+  json_append_double(str, x0);
+  json_append_comma_double(str, y0);
+  json_append_comma_double(str, x1);
+  json_append_comma_double(str, y1);
+  json_append_cstr(str, "],\n");
 
   //-------------------------
   // Generate VERTEX SEMANTIC
@@ -460,10 +471,7 @@ static mapcache_buffer* _mapcache_imageio_json_create_empty(mapcache_context *ct
 //------------------------------------------------------------------------------
 mapcache_buffer* _mapcache_imageio_json_encode(mapcache_context *ctx, mapcache_image *img, mapcache_image_format *format)
 {
-  char *vertexlist = "1,2,3,4,5"; // test...
-  char *heightmap = "1,2,3,4,5";
-  double offsetx, offsety, offsetz;
-  double bbminx, bbminy, bbminz, bbmaxx, bbmaxy, bbmaxz;
+  mapcache_buffer *buffer = NULL;
   int gridsize = img->w;
   mapcache_image_format_json* format_json = (mapcache_image_format_json*)format;
  
@@ -472,45 +480,55 @@ mapcache_buffer* _mapcache_imageio_json_encode(mapcache_context *ctx, mapcache_i
     ctx->set_error(ctx,500,"can't convert non elevation data to json");
     return NULL;
   }
+ 
+  json_string json = json_strmalloc(512);
+  _gen_json(&json, img->data, gridsize, img->x0, img->y0, img->x1, img->y1);
   
+  if (json.s)
+  {
+    buffer = mapcache_buffer_create(json.size, ctx->pool);
+    mapcache_buffer_append(buffer, json.size, json.s);
+  }
+  json_strfree(&json);
   
-  offsetx = 0.123456789012345678;
-  offsety = 0.123123123123123123;
-  offsetz = 0.898989898989898989;
-  
-  bbminx = 0.1;
-  bbminy = 0.2;
-  bbminz = 0.15;
-  bbmaxx = 0.2;
-  bbmaxy = 0.4;
-  bbmaxz = 0.3;
-  
-  char *json = apr_psprintf(ctx->pool, json,
-                            gridsize,
-                            vertexlist,
-                            offsetx, offsety, offsetz,
-                            bbminx, bbminy, bbminz, bbmaxx, bbmaxy, bbmaxz,
-                            heightmap);
-  
-  
-  size_t size = strlen(json);
-  mapcache_buffer *buffer = mapcache_buffer_create(size, ctx->pool);
-  mapcache_buffer_append(buffer, size, json);
  
   return buffer;
 }
 //------------------------------------------------------------------------------
 mapcache_image* _mapcache_imageio_json_decode(mapcache_context *ctx, mapcache_buffer *buffer)
 {  
- 
+  mapcache_image *img = mapcache_image_create(ctx);
   
-  return NULL;
+  _mapcache_imageio_json_decode_to_image(ctx, buffer,img);
+  if(GC_HAS_ERROR(ctx)) {
+    return NULL;
+  }
+  return img;
 }
 //------------------------------------------------------------------------------
 void _mapcache_imageio_json_decode_to_image(mapcache_context *ctx, mapcache_buffer *buffer,
-    mapcache_image *image)
+    mapcache_image *img)
 {
+  img->is_elevation = MC_ELEVATION_YES;
   
+  // todo: parse buffer and create image...
+  
+  /*
+  if(!img->data) {
+    img->data = malloc(...);
+    apr_pool_cleanup_register(r->pool, img->data, (void*)free, apr_pool_cleanup_null) ;
+    img->stride = img->w * 4;
+  }
+  */
+  
+  /*image: 
+  unsigned char *data; 
+  size_t w; 
+  size_t h;
+  size_t stride; 
+  double x0, y0, x1, y1;*/
+  
+ 
 }
 //------------------------------------------------------------------------------
 mapcache_image_format* mapcache_imageio_create_json_format(apr_pool_t *pool, char *name)
