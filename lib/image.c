@@ -291,6 +291,10 @@ void mapcache_image_metatile_split(mapcache_context *ctx, mapcache_metatile *mt)
         for(j=0; j<mt->metasize_y; j++) {
           tileimg = mapcache_image_create(ctx);
           tileimg->is_elevation = MC_ELEVATION_YES;
+          tileimg->x0 = mt->map.raw_image->x0;
+          tileimg->y0 = mt->map.raw_image->y0;
+          tileimg->x1 = mt->map.raw_image->x1;
+          tileimg->y1 = mt->map.raw_image->y1;
           tileimg->w = mt->map.raw_image->w;
           tileimg->h = mt->map.raw_image->h;
           tileimg->stride = mt->map.raw_image->stride;
