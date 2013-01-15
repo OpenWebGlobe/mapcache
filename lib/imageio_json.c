@@ -312,7 +312,7 @@ void _gen_json(json_string* str, float* heightmap, int gridsize, double x0, doub
       double y_coord = y0 + y*dH;
      
       double elevation = heightmap[y*gridsize+x];
-         
+
       _MercatorToWGS84(x_coord,y_coord,&lng,&lat);
       _WGS84ToCartesian(lng, lat, elevation, &x_cart, &y_cart, &z_cart);
       
@@ -398,7 +398,7 @@ void _gen_json(json_string* str, float* heightmap, int gridsize, double x0, doub
   
   
   //------------------------
-  // Generate INDEX SEMANTIC
+  // Generate INDEX SEMANTIC>x
   //------------------------
   
   json_append_cstr(str, "  \"IndexSemantic\": \"TRIANGLES\",\n");
