@@ -892,7 +892,6 @@ struct mapcache_image {
   mapcache_image_blank_type is_blank;
   mapcache_image_alpha_type has_alpha;
   mapcache_image_elevation_type is_elevation;
-
 };
 
 /** \def GET_IMG_PIXEL
@@ -1292,7 +1291,12 @@ struct mapcache_tileset {
    * image to be used as a watermark
    */
   mapcache_image *watermark;
-
+  
+  /**
+   *  this tileset represents elevation or image type
+   */ 
+  int elevation;
+  
   /**
    * handle to the configuration this tileset belongs to
    */
