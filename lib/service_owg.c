@@ -52,7 +52,14 @@ void _create_capabilities_owg(mapcache_context *ctx, mapcache_request_get_capabi
    int x1 = request->grid_link->grid_limits[maxlod].maxx;
    int y1 = request->grid_link->grid_limits[maxlod].maxy;
    
-   char* result = apr_psprintf(ctx->pool, "\
+   char* result;
+   
+   if (request->tileset->elevation)
+   { 
+      type = "elevation";
+   }
+   
+   result = apr_psprintf(ctx->pool, "\
 {\
    \"name\" : \"%s\",\n \
    \"type\" : \"%s\",\n \
