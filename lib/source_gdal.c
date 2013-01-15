@@ -623,10 +623,10 @@ inline void CreateMapElevation(mapcache_context *ctx, mapcache_map *map,
   map->raw_image->w = elevationblock;
   map->raw_image->h = elevationblock;
   map->raw_image->stride = 4 * elevationblock;
-  map->raw_image->x0 = pDstDataset->ulx;
-  map->raw_image->y0 = pDstDataset->uly;
-  map->raw_image->x1 = pDstDataset->lrx;
-  map->raw_image->y1 = pDstDataset->lry;
+  map->raw_image->x0 = map->extent.minx / map->grid_link->grid->extent.minx;
+  map->raw_image->y0 = map->extent.miny / map->grid_link->grid->extent.miny;
+  map->raw_image->x1 = map->extent.maxx / map->grid_link->grid->extent.maxx;
+  map->raw_image->y1 = map->extent.maxy / map->grid_link->grid->extent.maxy;
   map->raw_image->data = malloc(elevationblock*elevationblock*4);
   apr_pool_cleanup_register(ctx->pool, map->raw_image->data,(void*)free, apr_pool_cleanup_null);
   
@@ -1451,6 +1451,10 @@ void _mapcache_source_gdal_render_map_elevation(mapcache_context *ctx, mapcache_
     map->raw_image->h = elevationblock;
     map->raw_image->stride = 4 * elevationblock;
     map->raw_image->data = malloc(elevationblock*elevationblock*4);
+    map->raw_image->x0 = minx / map->grid_link->grid->extent.minx;
+    map->raw_image->y0 = miny / map->grid_link->grid->extent.miny;
+    map->raw_image->x1 = maxx / map->grid_link->grid->extent.maxx;
+    map->raw_image->y1 = maxy / map->grid_link->grid->extent.maxy;
     map->raw_image->is_blank = MC_EMPTY_YES;
     memset(map->raw_image->data, 0, elevationblock*elevationblock*4);
     apr_pool_cleanup_register(ctx->pool, map->raw_image->data,(void*)free, apr_pool_cleanup_null);
@@ -1503,6 +1507,10 @@ void _mapcache_source_gdal_render_map_elevation(mapcache_context *ctx, mapcache_
     map->raw_image->h = elevationblock;
     map->raw_image->stride = 4 * elevationblock;
     map->raw_image->data = malloc(elevationblock*elevationblock*4);
+    map->raw_image->x0 = minx / map->grid_link->grid->extent.minx;
+    map->raw_image->y0 = miny / map->grid_link->grid->extent.miny;
+    map->raw_image->x1 = maxx / map->grid_link->grid->extent.maxx;
+    map->raw_image->y1 = maxy / map->grid_link->grid->extent.maxy;
     map->raw_image->is_blank = MC_EMPTY_YES;
     memset(map->raw_image->data, 0, elevationblock*elevationblock*4);
     apr_pool_cleanup_register(ctx->pool, map->raw_image->data,(void*)free, apr_pool_cleanup_null);
