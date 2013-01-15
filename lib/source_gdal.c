@@ -303,9 +303,9 @@ inline void _ReadImageDataMemElv(unsigned char* buffer, int bufferwidth,
   }
  
   
-  if (fabs(value-NODATA)<GM_EPSILONFLT)
+  if (value <= NODATA)
   {
-    value = -99999.0f; // official "no data value"
+    value = 0.0f;
   }
 
   // floating point to RGBA conversion...
@@ -1209,7 +1209,7 @@ void _mapcache_source_gdal_render_map_image(mapcache_context *ctx, mapcache_map 
  */
 void _mapcache_source_gdal_render_map_elevation(mapcache_context *ctx, mapcache_map *map)
 {
-  int elevationblock = 257; //map->grid_link->grid->elevationblock;
+  int elevationblock = map->grid_link->grid->elevationblock;
   double minx, miny, maxx, maxy;
   double minx_data_wgs84, miny_data_wgs84, maxx_data_wgs84, maxy_data_wgs84;
 
