@@ -483,6 +483,7 @@ mapcache_tileset* mapcache_tileset_create(mapcache_context *ctx)
   tileset->dimensions = NULL;
   tileset->format = NULL;
   tileset->grid_links = NULL;
+  tileset->elevation = FALSE;
   tileset->config = NULL;
   return tileset;
 }
