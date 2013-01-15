@@ -154,7 +154,7 @@ void parseGrid(mapcache_context *ctx, ezxml_t node, mapcache_cfg *config)
     parseMetadata(ctx, cur_node, grid->metadata);
     GC_CHECK_ERROR(ctx);
   }
-
+  
   if ((cur_node = ezxml_child(node,"units")) != NULL) {
     if(!strcasecmp(cur_node->txt,"dd")) {
       grid->unit = MAPCACHE_UNIT_DEGREES;
@@ -566,7 +566,11 @@ void parseTileset(mapcache_context *ctx, ezxml_t node, mapcache_cfg *config)
     parseMetadata(ctx, cur_node, tileset->metadata);
     GC_CHECK_ERROR(ctx);
   }
-
+  
+  if ((cur_node = ezxml_child(node,"elevation")) != NULL) {
+     tileset->elevation = TRUE;
+  }
+      
 
   if ((value = (char*)apr_table_get(tileset->metadata,"wgs84boundingbox")) != NULL) {
     double *values;
