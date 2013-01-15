@@ -188,25 +188,25 @@ static void json_append_comma_int(json_string *s, int value)
 //----------------------------------------------------------------------------
 static void json_append_float(json_string *s, float value)
 {
-  snprintf(s->tmp, 32, "%.7f", value);
+  snprintf(s->tmp, 32, "%.7g", value);
   json_append_cstr(s, s->tmp);
 }
 //----------------------------------------------------------------------------
 static void json_append_comma_float(json_string *s, float value)
 {
-  snprintf(s->tmp, 32, ",%.7f", value);
+  snprintf(s->tmp, 32, ",%.7g", value);
   json_append_cstr(s, s->tmp);
 }
 //----------------------------------------------------------------------------
 static void json_append_double(json_string *s, double value)
 {
-  snprintf(s->tmp, 32, "%.15lf", value);
+  snprintf(s->tmp, 32, "%.15g", value);
   json_append_cstr(s, s->tmp);
 }
 //----------------------------------------------------------------------------
 static void json_append_comma_double(json_string *s, double value)
 {
-  snprintf(s->tmp, 32, ",%.15lf", value);
+  snprintf(s->tmp, 32, ",%.15g", value);
   json_append_cstr(s, s->tmp);
 }
 //------------------------------------------------------------------------------
