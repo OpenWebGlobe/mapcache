@@ -1658,7 +1658,7 @@ void _mapcache_source_gdal_render_map_elevation(mapcache_context *ctx, mapcache_
  */
 void _mapcache_source_gdal_render_map(mapcache_context *ctx, mapcache_map *map)
 {
-  int is_elevation = map->tileset->source->is_elevation;
+  int is_elevation = map->tileset->elevation;
   
   if (is_elevation)
   {
@@ -1731,20 +1731,6 @@ void _mapcache_source_gdal_configuration_parse_xml(mapcache_context *ctx, ezxml_
      parse_extent(cur_node->txt, src->extent);
      apr_pool_cleanup_register(ctx->pool, src->extent,(void*)free, apr_pool_cleanup_null);
   }
-  
-   if ((cur_node = ezxml_child(node,"elevation")) != NULL) {
-    source->is_elevation = TRUE;
-    if (sizeof(float) != 4)
-    {
-      ctx->set_error(ctx,500,"to support elevation data sizeof(float) must be 4 bytes...");
-    }
-  }
-
-  /*if ((cur_node = ezxml_child(node,"gdalparams")) != NULL) {
-    for(cur_node = cur_node->child; cur_node; cur_node = cur_node->sibling) {
-      apr_table_set(src->gdal_params, cur_node->name, cur_node->txt);
-    }
-  }*/
 }
 /*----------------------------------------------------------------------------*/
 /**
