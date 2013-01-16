@@ -310,9 +310,9 @@ inline void _ReadImageDataMemElv(unsigned char* buffer, int bufferwidth,
 
   // floating point to RGBA conversion...
   unsigned char* val_chr = (unsigned char*)&value;
-  *r = val_chr[0];
+  *b = val_chr[0];
   *g = val_chr[1];
-  *b = val_chr[2];
+  *r = val_chr[2];
   *a = val_chr[3];
 }
 //------------------------------------------------------------------------------
