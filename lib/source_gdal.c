@@ -636,7 +636,7 @@ inline void CreateMapElevation(mapcache_context *ctx, mapcache_map *map,
   for (y=0;y<elevationblock;y++)
   {
      for (x=0;x<elevationblock;x++)
-     {
+     {       
        unsigned char r,g,b,a; 
        double x_coord = pDstDataset->ulx + ((double)x)*pDstDataset->pixelwidth;
        double y_coord = pDstDataset->uly - ((double)y)*pDstDataset->pixelheight;
@@ -690,7 +690,7 @@ inline void CreateMapElevation(mapcache_context *ctx, mapcache_map *map,
                                           sourcetileheight, (int)(xx), (int)(yy), 
                                           &r,&g,&b,&a, NODATA, datatype);
        }
-       
+              
        map->raw_image->data[4*elevationblock*y+4*x+0] = b;
        map->raw_image->data[4*elevationblock*y+4*x+1] = g;
        map->raw_image->data[4*elevationblock*y+4*x+2] = r;
@@ -1327,8 +1327,8 @@ void _mapcache_source_gdal_render_map_elevation(mapcache_context *ctx, mapcache_
   oDstDataset.nBands = 4;
   oDstDataset.nSizeX = tilewidth;
   oDstDataset.nSizeY = tileheight;
-  oDstDataset.pixelwidth = fabs(maxx - minx) / (double)(tilewidth);
-  oDstDataset.pixelheight = fabs(maxy - miny) / (double)(tileheight);
+  oDstDataset.pixelwidth = fabs(maxx - minx) / (double)(tilewidth-1);
+  oDstDataset.pixelheight = fabs(maxy - miny) / (double)(tileheight-1);
   oDstDataset.affineTransformation[0] = minx;
   oDstDataset.affineTransformation[1] = oDstDataset.pixelwidth;
   oDstDataset.affineTransformation[2] = 0;
