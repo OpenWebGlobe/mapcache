@@ -311,7 +311,7 @@ void _gen_json(json_string* str, float* heightmap, int gridsize, double x0, doub
       double x_coord = x0 + x*dW;
       double y_coord = y0 + y*dH;
      
-      double elevation = heightmap[y*gridsize+x];
+      double elevation = heightmap[(gridsize-y-1)*gridsize+x];
 
       _MercatorToWGS84(x_coord,y_coord,&lng,&lat);
       _WGS84ToCartesian(lng, lat, elevation, &x_cart, &y_cart, &z_cart);
@@ -344,7 +344,7 @@ void _gen_json(json_string* str, float* heightmap, int gridsize, double x0, doub
       
       // TEXCOORD:
       json_append_comma_float(str,(float)(x*fdX));
-      json_append_comma_float(str,(float)(1.0f-y*fdX));
+      json_append_comma_float(str,(float)(y*fdX));
       
     }
   }
@@ -362,19 +362,19 @@ void _gen_json(json_string* str, float* heightmap, int gridsize, double x0, doub
   {
     for (i=0;i<gridsize-1;i++)
     {
-      /*  a    b
+      /*  d    c
           +-- -+
           |  / |    Triangles: acb, bcd
           |/   |
           +----+
-          c    d
+          a    b
       */ 
       int a,b,c,d;
       
       a = i+j*gridsize;
       b = a+1;
-      c = a+gridsize;
-      d = c+1;
+      d = a+gridsize;
+      c = d+1;
       
       if (i==0 && j==0)
       {
@@ -386,10 +386,10 @@ void _gen_json(json_string* str, float* heightmap, int gridsize, double x0, doub
       }
       
       json_append_comma_int(str,c);
+      json_append_comma_int(str,d);
+      json_append_comma_int(str,a);
       json_append_comma_int(str,b);
-      json_append_comma_int(str,b);
-      json_append_comma_int(str,c);
-      json_append_comma_int(str,d); 
+      json_append_comma_int(str,c); 
     }
   }
    
