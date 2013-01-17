@@ -45,6 +45,7 @@ static char *demo_head =
   "    height: 100%;\n"
   "    border: 1px solid black;\n"
   "    }\n"
+  "    img { image-rendering: -moz-crisp-edges; }\n"
   "    </style>\n"
   "    <script src=\"http://www.openlayers.org/api/OpenLayers.js\"></script>\n"
   "    <script type=\"text/javascript\">\n"
