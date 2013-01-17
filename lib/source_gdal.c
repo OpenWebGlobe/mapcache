@@ -247,17 +247,10 @@ inline void _ReadImageDataMemGray(unsigned char* buffer, int bufferwidth,
 }
 //
 //------------------------------------------------------------------------------
-inline void _ReadImageDataMemElv(unsigned char* buffer, int bufferwidth, 
-                                 int bufferheight, int x, int y, 
+inline void _ReadImageDataMemElv(unsigned char* buffer,
                                  unsigned char* r, unsigned char* g, 
                                  unsigned char* b, unsigned char* a, float NODATA, int datatype)
 {
-  if (x<0 || y<0 || x>bufferwidth-1 || y>bufferheight-1) 
-  { 
-     *b=0; *g=0; *r=0; *a=0;
-     return;
-  }
-  
   unsigned int ui_value;
   int i_value;
   float f_value;
@@ -271,31 +264,31 @@ inline void _ReadImageDataMemElv(unsigned char* buffer, int bufferwidth,
   switch(datatype)
   {
     case 1:  // GDT_UInt32
-      ui_value = ((unsigned int*)buffer)[bufferwidth*y+x];
+      ui_value = ((unsigned int*)buffer)[0];
       value = (float) ui_value;
       break;
     case 2:  // GDT_Int32f
-      i_value = ((int*)buffer)[bufferwidth*y+x];
+      i_value = ((int*)buffer)[0];
       value = (float) i_value;
       break;
     case 3:  // GDT_Float32
-      f_value = ((float*)buffer)[bufferwidth*y+x];
+      f_value = ((float*)buffer)[0];
       value = f_value;
       break;
     case 4:  // GDT_Float64
-      d_value = ((double*)buffer)[bufferwidth*y+x];
+      d_value = ((double*)buffer)[0];
       value = (float) d_value;
       break;
     case 5: 
-      us_value = ((unsigned short*)buffer)[bufferwidth*y+x];
+      us_value = ((unsigned short*)buffer)[0];
       value = (float) us_value;
     break;
     case 6:  
-      s_value = ((short*)buffer)[bufferwidth*y+x];
+      s_value = ((short*)buffer)[0];
       value = (float) s_value;
     break;
     case 7:  
-      b_value = ((char*)buffer)[bufferwidth*y+x];
+      b_value = ((char*)buffer)[0];
       value = (float) b_value;
     break;
     default:
@@ -605,96 +598,6 @@ inline void CreateMapGray(mapcache_context *ctx, mapcache_map *map,
        map->raw_image->data[4*map->width*y+4*x+1] = g;
        map->raw_image->data[4*map->width*y+4*x+2] = r;
        map->raw_image->data[4*map->width*y+4*x+3] = a;
-     }
-  }
-}
-//------------------------------------------------------------------------------
-inline void CreateMapElevation(mapcache_context *ctx, mapcache_map *map, 
-      datasetinfo* pSrcDataset, datasetinfo* pDstDataset, 
-      int sourcetilewidth, int sourcetileheight, mapcache_source_gdal* gdal, 
-      OGRCoordinateTransformationH pCTBack, OGRCoordinateTransformationH pCTWGS84, 
-      double minx_data_wgs84, double miny_data_wgs84,
-      double maxx_data_wgs84,double maxy_data_wgs84, int nXOff,
-      int nYOff, double scalex, double scaley, unsigned char* pData, float NODATA, int datatype, int elevationblock)
-{
-  //----------------------------------------------------------------------------
-  map->raw_image = mapcache_image_create(ctx);
-  map->raw_image->is_elevation = MC_ELEVATION_YES;
-  map->raw_image->w = elevationblock;
-  map->raw_image->h = elevationblock;
-  map->raw_image->stride = 4 * elevationblock;
-  double dx = fabs(map->grid_link->grid->extent.maxx-map->grid_link->grid->extent.minx);
-  double dy = fabs(map->grid_link->grid->extent.maxx-map->grid_link->grid->extent.minx);
-  map->raw_image->x0 = map->extent.minx / dx * 2.0;
-  map->raw_image->y0 = map->extent.miny / dy * 2.0;
-  map->raw_image->x1 = map->extent.maxx / dx * 2.0;
-  map->raw_image->y1 = map->extent.maxy / dy * 2.0;
-  map->raw_image->data = malloc(elevationblock*elevationblock*4);
-  apr_pool_cleanup_register(ctx->pool, map->raw_image->data,(void*)free, apr_pool_cleanup_null);
-  
-  int x,y;
-  for (y=0;y<elevationblock;y++)
-  {
-     for (x=0;x<elevationblock;x++)
-     {       
-       unsigned char r,g,b,a; 
-       double x_coord = pDstDataset->ulx + ((double)x)*pDstDataset->pixelwidth;
-       double y_coord = pDstDataset->uly - ((double)y)*pDstDataset->pixelheight;
-       
-       // note: non-global datasets may have too large numbers (overflow) to
-       //       process on a global system. Therefore this additional check is
-       //       implemented
-       if (gdal->extent != NULL)
-       {
-            double x_wgs84 = x_coord;
-            double y_wgs84 = y_coord;
-            OCTTransform(pCTWGS84, 1, &x_wgs84, &y_wgs84, NULL);
-            
-            if (x_wgs84>=minx_data_wgs84 &&
-                x_wgs84<=maxx_data_wgs84 &&
-                y_wgs84>=miny_data_wgs84 &&
-                y_wgs84<=maxy_data_wgs84)
-            {
-              // pixel will be inside dataset!
-              OCTTransform(pCTBack, 1, &x_coord, &y_coord, NULL);            
-              double xx = pSrcDataset->affineTransformation_inverse[0] + x_coord * pSrcDataset->affineTransformation_inverse[1] + y_coord * pSrcDataset->affineTransformation_inverse[2];
-              double yy = pSrcDataset->affineTransformation_inverse[3] + x_coord * pSrcDataset->affineTransformation_inverse[4] + y_coord * pSrcDataset->affineTransformation_inverse[5];
-              xx -= nXOff;
-              yy -= nYOff;
-              xx *= scalex;
-              yy *= scaley;
-            
-              _ReadImageDataMemElv(pData, sourcetilewidth, 
-                                              sourcetileheight, (int)(xx), (int)(yy), 
-                                              &r,&g,&b,&a, NODATA, datatype);
-            }
-            else
-            {  // outside global extent -> completely transparent...
-               r=0;
-               g=0;
-               b=0;
-               a=0;
-            }
-       }
-       else
-       {
-          OCTTransform(pCTBack, 1, &x_coord, &y_coord, NULL);            
-          double xx = pSrcDataset->affineTransformation_inverse[0] + x_coord * pSrcDataset->affineTransformation_inverse[1] + y_coord * pSrcDataset->affineTransformation_inverse[2];
-          double yy = pSrcDataset->affineTransformation_inverse[3] + x_coord * pSrcDataset->affineTransformation_inverse[4] + y_coord * pSrcDataset->affineTransformation_inverse[5];
-          xx -= nXOff;
-          yy -= nYOff;
-          xx *= scalex;
-          yy *= scaley;
-         
-          _ReadImageDataMemElv(pData, sourcetilewidth, 
-                                          sourcetileheight, (int)(xx), (int)(yy), 
-                                          &r,&g,&b,&a, NODATA, datatype);
-       }
-              
-       map->raw_image->data[4*elevationblock*y+4*x+0] = b;
-       map->raw_image->data[4*elevationblock*y+4*x+1] = g;
-       map->raw_image->data[4*elevationblock*y+4*x+2] = r;
-       map->raw_image->data[4*elevationblock*y+4*x+3] = a;
      }
   }
 }
@@ -1224,9 +1127,6 @@ void _mapcache_source_gdal_render_map_elevation(mapcache_context *ctx, mapcache_
   
   OGRCoordinateTransformationH pCT;
   OGRCoordinateTransformationH pCTBack;
-  OGRCoordinateTransformationH pCTWGS84 = NULL;
-  
-  double quality = 2.0;
   
   OGRSpatialReferenceH srcref;
   OGRSpatialReferenceH dstref;
@@ -1245,7 +1145,6 @@ void _mapcache_source_gdal_render_map_elevation(mapcache_context *ctx, mapcache_
   // heoight of tile (pixel)
   tileheight = elevationblock;
   
- 
   // Setup GDAL
   GDALAllRegister();
   CPLErrorReset();
@@ -1349,15 +1248,6 @@ void _mapcache_source_gdal_render_map_elevation(mapcache_context *ctx, mapcache_
   // Create Coordinate transformation:
   pCT        = OCTNewCoordinateTransformation(srcref, dstref);
   pCTBack    = OCTNewCoordinateTransformation(dstref, srcref);
-  if (gdal->extent != NULL)
-  {
-    pCTWGS84   = OCTNewCoordinateTransformation(dstref, wgs84ref);
-    if (!pCTWGS84)
-    {
-      ctx->set_error(ctx,500,"Error: can't create transformation to WGS84");
-      return;  
-    }
-  }
   
   if (!pCT)
   {
@@ -1371,175 +1261,6 @@ void _mapcache_source_gdal_render_map_elevation(mapcache_context *ctx, mapcache_
    return;  
   }
   
-  // warning: this is not always valid. For now this is restricted
-  // to projections like mercator -> wgs84.
-  // only use the "extent" tag for such datasets.
-  if (gdal->extent != NULL)
-  {
-    minx_data_wgs84 = gdal->extent->minx;
-    miny_data_wgs84 = gdal->extent->miny;
-    maxx_data_wgs84 = gdal->extent->maxx;
-    maxy_data_wgs84 = gdal->extent->maxy;
-  }
-  // Rectangle within source required for tile
-  double dest_ulx = 1e20;
-  double dest_lry = 1e20;
-  double dest_lrx = -1e20;
-  double dest_uly = -1e20;
- 
-  //Transform every pixel along border of tile
-  int p;
-  for (p=0;p<=oDstDataset.nSizeX;p++)
-  {
-    double x_tile,y_tile;
-    int x,y;
-    x = p;
-    y = 0;
-    y_tile = oDstDataset.affineTransformation[3] + x*oDstDataset.affineTransformation[4] + y*oDstDataset.affineTransformation[5];
-    x_tile = oDstDataset.affineTransformation[0] + x*oDstDataset.affineTransformation[1] + y*oDstDataset.affineTransformation[2];
-    if (OCTTransform(pCTBack, 1, &x_tile, &y_tile, NULL))
-    { 
-      dest_ulx = GM_MIN(x_tile, dest_ulx);
-      dest_lry = GM_MIN(y_tile, dest_lry);
-      dest_lrx = GM_MAX(x_tile, dest_lrx);
-      dest_uly = GM_MAX(y_tile, dest_uly);
-    }
-    x = p;
-    y = oDstDataset.nSizeY;
-    y_tile = oDstDataset.affineTransformation[3] + x*oDstDataset.affineTransformation[4] + y*oDstDataset.affineTransformation[5];
-    x_tile = oDstDataset.affineTransformation[0] + x*oDstDataset.affineTransformation[1] + y*oDstDataset.affineTransformation[2];
-    if (OCTTransform(pCTBack, 1, &x_tile, &y_tile, NULL))
-    {
-      dest_ulx = GM_MIN(x_tile, dest_ulx);
-      dest_lry = GM_MIN(y_tile, dest_lry);
-      dest_lrx = GM_MAX(x_tile, dest_lrx);
-      dest_uly = GM_MAX(y_tile, dest_uly);
-    }
-  }
-  for (p=0;p<=oDstDataset.nSizeY;p++)
-  {
-    double x_tile,y_tile;
-    int x,y;
-    x = 0;
-    y = p;
-    y_tile = oDstDataset.affineTransformation[3] + x*oDstDataset.affineTransformation[4] + y*oDstDataset.affineTransformation[5];
-    x_tile = oDstDataset.affineTransformation[0] + x*oDstDataset.affineTransformation[1] + y*oDstDataset.affineTransformation[2];
-    if (OCTTransform(pCTBack, 1, &x_tile, &y_tile, NULL))
-    {
-      dest_ulx = GM_MIN(x_tile, dest_ulx);
-      dest_lry = GM_MIN(y_tile, dest_lry);
-      dest_lrx = GM_MAX(x_tile, dest_lrx);
-      dest_uly = GM_MAX(y_tile, dest_uly);
-    }
-    x = oDstDataset.nSizeX;
-    y = p;
-    y_tile = oDstDataset.affineTransformation[3] + x*oDstDataset.affineTransformation[4] + y*oDstDataset.affineTransformation[5];
-    x_tile = oDstDataset.affineTransformation[0] + x*oDstDataset.affineTransformation[1] + y*oDstDataset.affineTransformation[2];
-    if (OCTTransform(pCTBack, 1, &x_tile, &y_tile, NULL))
-    {
-      dest_ulx = GM_MIN(x_tile, dest_ulx);
-      dest_lry = GM_MIN(y_tile, dest_lry);
-      dest_lrx = GM_MAX(x_tile, dest_lrx);
-      dest_uly = GM_MAX(y_tile, dest_uly);
-    }
-  }
-    
-  if (!TestRectRectIntersect(dest_ulx, dest_uly, dest_lrx, dest_lry,
-                             oSrcDataset.ulx,oSrcDataset.uly,oSrcDataset.lrx,oSrcDataset.lry))
-  {
-    map->raw_image = mapcache_image_create(ctx);
-    map->raw_image->is_elevation = MC_ELEVATION_YES;
-    map->raw_image->w = elevationblock;
-    map->raw_image->h = elevationblock;
-    map->raw_image->stride = 4 * elevationblock;
-    map->raw_image->data = malloc(elevationblock*elevationblock*4);
-    double dx = fabs(map->grid_link->grid->extent.maxx-map->grid_link->grid->extent.minx);
-    double dy = fabs(map->grid_link->grid->extent.maxx-map->grid_link->grid->extent.minx);
-    map->raw_image->x0 = minx / dx * 2.0;
-    map->raw_image->y0 = miny / dy * 2.0;
-    map->raw_image->x1 = maxx / dx * 2.0;
-    map->raw_image->y1 = maxy / dy * 2.0;
-    map->raw_image->is_blank = MC_EMPTY_YES;
-    memset(map->raw_image->data, 0, elevationblock*elevationblock*4);
-    apr_pool_cleanup_register(ctx->pool, map->raw_image->data,(void*)free, apr_pool_cleanup_null);
-    
-    OCTDestroyCoordinateTransformation(pCT);   
-    OCTDestroyCoordinateTransformation(pCTBack); 
-    OSRDestroySpatialReference(dstref);
-    OSRDestroySpatialReference(srcref);
-    GDALClose(hDataset);
-    return;
-  }
-  
-  double x0,y0,x1,y1;
-  int nXOff, nYOff;   // Start pixel y
-  int nXSize;  // width (number of pixels to read)
-  int nYSize;  // height (number of pixels to read)
-
-  x0 = oSrcDataset.affineTransformation_inverse[0] + dest_ulx * oSrcDataset.affineTransformation_inverse[1] + dest_uly * oSrcDataset.affineTransformation_inverse[2];
-  y0 = oSrcDataset.affineTransformation_inverse[3] + dest_ulx * oSrcDataset.affineTransformation_inverse[4] + dest_uly * oSrcDataset.affineTransformation_inverse[5];
-  x1 = oSrcDataset.affineTransformation_inverse[0] + dest_lrx * oSrcDataset.affineTransformation_inverse[1] + dest_lry * oSrcDataset.affineTransformation_inverse[2];
-  y1 = oSrcDataset.affineTransformation_inverse[3] + dest_lrx * oSrcDataset.affineTransformation_inverse[4] + dest_lry * oSrcDataset.affineTransformation_inverse[5];
-
-  nXOff = (int)(x0);
-  nYOff = (int)(y0);
-  
-  if (nXOff<0) { nXOff = 0;}
-  if (nYOff<0) { nYOff = 0;}
-  if (nYOff>oSrcDataset.nSizeY-1) {nYOff = oSrcDataset.nSizeY-1;}
-  if (nXOff>oSrcDataset.nSizeX-1) {nXOff = oSrcDataset.nSizeX-1;}
-  
-  nXSize = (int)x1 - nXOff + 1;
-  nYSize = (int)y1 - nYOff + 1;
-  
-  if (nXOff + nXSize > oSrcDataset.nSizeX-1)
-  {
-     nXSize = oSrcDataset.nSizeX-1 - nXOff;
-  }
-  
-  if (nYOff + nYSize > oSrcDataset.nSizeY-1)
-  {
-     nYSize = oSrcDataset.nSizeY-1 - nYOff;
-  }
-  
-  if (nXSize<=0 || nYSize<=0)
-  {     
-    // return empty tile (transparent)
-    map->raw_image = mapcache_image_create(ctx);
-    map->raw_image->is_elevation = MC_ELEVATION_YES;
-    map->raw_image->w = elevationblock;
-    map->raw_image->h = elevationblock;
-    map->raw_image->stride = 4 * elevationblock;
-    map->raw_image->data = malloc(elevationblock*elevationblock*4);
-    double dx = fabs(map->grid_link->grid->extent.maxx-map->grid_link->grid->extent.minx);
-    double dy = fabs(map->grid_link->grid->extent.maxx-map->grid_link->grid->extent.minx);
-    map->raw_image->x0 = minx / dx * 2.0;
-    map->raw_image->y0 = miny / dy * 2.0;
-    map->raw_image->x1 = maxx / dx * 2.0;
-    map->raw_image->y1 = maxy / dy * 2.0;
-    map->raw_image->is_blank = MC_EMPTY_YES;
-    memset(map->raw_image->data, 0, elevationblock*elevationblock*4);
-    apr_pool_cleanup_register(ctx->pool, map->raw_image->data,(void*)free, apr_pool_cleanup_null);
-    
-    OCTDestroyCoordinateTransformation(pCT);   
-    OCTDestroyCoordinateTransformation(pCTBack); 
-    OSRDestroySpatialReference(dstref);
-    OSRDestroySpatialReference(srcref);
-    GDALClose(hDataset);
-    return;
-  }
-    
-  int sourcetilewidth;  // nXSize would be 100%
-  int sourcetileheight; // nYSize would be 100%
-  
-  double aspect = (double)nXSize/(double)nYSize;
-  sourcetilewidth = quality * GM_MAX(tilewidth, tileheight);
-  sourcetileheight = (int)((double)sourcetilewidth/aspect);
-  
-  double scalex = (double)sourcetilewidth/(double)nXSize;
-  double scaley = (double)sourcetileheight/(double)nYSize;
-  
- 
   // Retrieve data from source
   unsigned char *pData = NULL;
   int bands = 0;
@@ -1547,7 +1268,7 @@ void _mapcache_source_gdal_render_map_elevation(mapcache_context *ctx, mapcache_
   int datatype_bytes;
   int datatype;
 
- 
+  char* buffer = 0;
   if (oSrcDataset.nBands == 1)
   {
     bands = 1;
@@ -1594,68 +1315,90 @@ void _mapcache_source_gdal_render_map_elevation(mapcache_context *ctx, mapcache_
       default:
          ctx->set_error(ctx,500,"Error: Unsupported Raster Data Type");
       return;
-      }
-    
-    pData = apr_palloc(ctx->pool,sourcetilewidth*sourcetileheight*datatype_bytes);
-    if (pData == NULL)
-    {
-      ctx->set_error(ctx,500,"Error: Cant allocate memory: %i bytes", sourcetilewidth*sourcetileheight*datatype_bytes);
-      return; 
-    } 
- 
-    if (CE_None != GDALDatasetRasterIO(hDataset, GF_Read, 
-           nXOff, nYOff,    // Pixel position in source dataset 
-           nXSize, nYSize,  // width/height in source dataset
-           pData,        // target buffer
-           sourcetilewidth, sourcetileheight, // dimension of target buffer
-           rdd,      
-           oSrcDataset.nBands, // number of input bands
-           NULL,            // band map is ignored
-           datatype_bytes,  // pixelspace
-           datatype_bytes*sourcetilewidth, //linespace, 
-           1                  //bandspace.
-    ))
-    {
-      ctx->set_error(ctx,500,"Error: GDALDatasetRasterIO failed!");
-      return;  
     }
-  }
-  else
-  {
-    bands = 0;
-    ctx->set_error(ctx,500,"Error: Unsupported number of bands");
-    return; 
-  }
-  // Close Dataset
-  GDALClose( hDataset );
-
-
-  CreateMapElevation(ctx, map, &oSrcDataset, &oDstDataset, 
-                 sourcetilewidth, sourcetileheight, gdal, pCTBack, pCTWGS84,
-                 minx_data_wgs84,miny_data_wgs84,maxx_data_wgs84,maxy_data_wgs84,
-                 nXOff, nYOff, scalex, scaley, pData, NODATA, datatype, elevationblock);
     
-     
-    
-   /* map->raw_image = mapcache_image_create(ctx);
+    buffer = malloc(datatype_bytes);
+    apr_pool_cleanup_register(ctx->pool, buffer,(void*)free, apr_pool_cleanup_null);
+      
+ 
+    // Create Map:  
+    map->raw_image = mapcache_image_create(ctx);
     map->raw_image->is_elevation = MC_ELEVATION_YES;
     map->raw_image->w = elevationblock;
     map->raw_image->h = elevationblock;
     map->raw_image->stride = 4 * elevationblock;
+    double dx = fabs(map->grid_link->grid->extent.maxx-map->grid_link->grid->extent.minx);
+    double dy = fabs(map->grid_link->grid->extent.maxx-map->grid_link->grid->extent.minx);
+    map->raw_image->x0 = map->extent.minx / dx * 2.0;
+    map->raw_image->y0 = map->extent.miny / dy * 2.0;
+    map->raw_image->x1 = map->extent.maxx / dx * 2.0;
+    map->raw_image->y1 = map->extent.maxy / dy * 2.0;
     map->raw_image->data = malloc(elevationblock*elevationblock*4);
-    memset(map->raw_image->data, 0, elevationblock*elevationblock*4);
-    apr_pool_cleanup_register(ctx->pool, map->raw_image->data,(void*)free, apr_pool_cleanup_null);*/
+    apr_pool_cleanup_register(ctx->pool, map->raw_image->data,(void*)free, apr_pool_cleanup_null);
+  
+    int x,y;
+    for (y=0;y<elevationblock;y++)
+    {
+      for (x=0;x<elevationblock;x++)
+      {       
+        unsigned char r,g,b,a; 
+        double x_coord = oDstDataset.ulx + ((double)x)*oDstDataset.pixelwidth;
+        double y_coord = oDstDataset.uly - ((double)y)*oDstDataset.pixelheight; 
+        
+        OCTTransform(pCTBack, 1, &x_coord, &y_coord, NULL);            
+        double xx = oSrcDataset.affineTransformation_inverse[0] + x_coord * oSrcDataset.affineTransformation_inverse[1] + y_coord * oSrcDataset.affineTransformation_inverse[2];
+        double yy = oSrcDataset.affineTransformation_inverse[3] + x_coord * oSrcDataset.affineTransformation_inverse[4] + y_coord * oSrcDataset.affineTransformation_inverse[5];
+
+        int xxi = (int)xx;
+        int yyi = (int)yy;
+        // is it inside dataset ?
+        if (xxi < 0 || xxi > oSrcDataset.nSizeX-1 ||
+            yyi < 0 || yyi > oSrcDataset.nSizeY-1)
+        {
+           a = r = g = b = 0;
+           
+        }
+        else
+        {   
+           if (CE_None != GDALDatasetRasterIO(hDataset, GF_Read, 
+                            xxi, yyi,    // Pixel position in source dataset 
+                            1, 1,  // width/height in source dataset
+                            buffer,        // target buffer
+                            1, 1, // dimension of target buffer
+                            rdd,      
+                            oSrcDataset.nBands, // number of input bands
+                            NULL,            // band map is ignored
+                            datatype_bytes,  // pixelspace
+                            datatype_bytes, //linespace, 
+                            1                  //bandspace
+                            ))
+          {
+            ctx->set_error(ctx,500,"Error: GDALDatasetRasterIO failed!");
+            return;  
+          }
+           
+          _ReadImageDataMemElv(buffer, &r,&g,&b,&a, NODATA, datatype);
+        }
+
+        map->raw_image->data[4*elevationblock*y+4*x+0] = b;
+        map->raw_image->data[4*elevationblock*y+4*x+1] = g;
+        map->raw_image->data[4*elevationblock*y+4*x+2] = r;
+        map->raw_image->data[4*elevationblock*y+4*x+3] = a;
+        
+      }
+    }
+  }
     
- 
-    
+  
+
+  // Close Dataset
+  GDALClose( hDataset );
+
   // free SRS
   OCTDestroyCoordinateTransformation(pCT);   
   OCTDestroyCoordinateTransformation(pCTBack); 
   OSRDestroySpatialReference(dstref);
   OSRDestroySpatialReference(srcref);
-  
- 
-  
 }
 //------------------------------------------------------------------------------
 /**
