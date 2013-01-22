@@ -408,12 +408,7 @@ void _gen_json(json_string* str, float* heightmap, int gridsize, double x0, doub
   for (i=1;i<gridsize-1;i++)
   {
     x = 0;
-    y = gridsize-1-i;
-    
-    json_append_int(str,x);
-    json_append_comma_int(str,y);
-    json_append_cstr(str,"\n");
-    
+    y = gridsize-1-i;    
     x_coord = x0 + x*dW; 
     y_coord = y0 + y*dH;
     elevation = heightmap[(gridsize-y-1)*gridsize+x]-curtainheight;
