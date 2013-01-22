@@ -270,7 +270,7 @@ void _gen_json(json_string* str, float* heightmap, int gridsize, double x0, doub
   json_append_cstr(str, "  \"GridSize\": ");
   json_append_int(str, gridsize);
   json_append_cstr(str, ",\n");
-  
+
   //----------------
   // Generate BOUNDS
   //----------------
@@ -281,7 +281,7 @@ void _gen_json(json_string* str, float* heightmap, int gridsize, double x0, doub
   json_append_comma_double(str, x1);
   json_append_comma_double(str, y1);
   json_append_cstr(str, "],\n");
-
+  
   //-------------------------
   // Generate VERTEX SEMANTIC
   //-------------------------
@@ -299,20 +299,22 @@ void _gen_json(json_string* str, float* heightmap, int gridsize, double x0, doub
   double lng0, lat0, lng1, lat1;
   double x_cart, y_cart, z_cart;
   double lng, lat;
-  
+  double x_coord;
+  double y_coord;
+  double elevation;
   double dH = (y1-y0)/(gridsize-1); // for x positions
   double dW = (x1-x0)/(gridsize-1); // for y positions
   float fdX = 1.0 / (gridsize-1);   // for texture coordinates (u,v)
-   
+    
   for (y=0;y<gridsize;y++)
   {
     for (x=0;x<gridsize;x++)
     {
-      double x_coord = x0 + x*dW;
-      double y_coord = y0 + y*dH;
+      x_coord = x0 + x*dW;
+      y_coord = y0 + y*dH;
      
-      double elevation = heightmap[(gridsize-y-1)*gridsize+x];
-
+      elevation = heightmap[(gridsize-y-1)*gridsize+x];
+         
       _MercatorToWGS84(x_coord,y_coord,&lng,&lat);
       _WGS84ToCartesian(lng, lat, elevation, &x_cart, &y_cart, &z_cart);
       
@@ -349,6 +351,133 @@ void _gen_json(json_string* str, float* heightmap, int gridsize, double x0, doub
     }
   }
   
+  // add curtain vertices
+  double curtainheight = 500;
+  
+  // NW-corner:
+  x=0; y=gridsize-1;
+  x_coord = x0 + x*dW; 
+  y_coord = y0 + y*dH;
+  elevation = heightmap[(gridsize-y-1)*gridsize+x]-curtainheight;
+  _MercatorToWGS84(x_coord,y_coord,&lng,&lat);
+  _WGS84ToCartesian(lng, lat, elevation, &x_cart, &y_cart, &z_cart);
+  json_append_comma_float(str,(float)(x_cart - offsetx));
+  json_append_comma_float(str,(float)(y_cart - offsety));
+  json_append_comma_float(str,(float)(z_cart - offsetz));
+  json_append_comma_float(str,(float)(x*fdX));
+  json_append_comma_float(str,(float)(y*fdX));
+  // SW-corner:
+  x=0; y=0;
+  x_coord = x0 + x*dW; 
+  y_coord = y0 + y*dH;
+  elevation = heightmap[(gridsize-y-1)*gridsize+x]-curtainheight;
+  _MercatorToWGS84(x_coord,y_coord,&lng,&lat);
+  _WGS84ToCartesian(lng, lat, elevation, &x_cart, &y_cart, &z_cart);
+  json_append_comma_float(str,(float)(x_cart - offsetx));
+  json_append_comma_float(str,(float)(y_cart - offsety));
+  json_append_comma_float(str,(float)(z_cart - offsetz));
+  json_append_comma_float(str,(float)(x*fdX));
+  json_append_comma_float(str,(float)(y*fdX));
+  // SE-corner:
+  x=gridsize-1; y=0;
+  x_coord = x0 + x*dW; 
+  y_coord = y0 + y*dH;
+  elevation = heightmap[(gridsize-y-1)*gridsize+x]-curtainheight;
+  _MercatorToWGS84(x_coord,y_coord,&lng,&lat);
+  _WGS84ToCartesian(lng, lat, elevation, &x_cart, &y_cart, &z_cart);
+  json_append_comma_float(str,(float)(x_cart - offsetx));
+  json_append_comma_float(str,(float)(y_cart - offsety));
+  json_append_comma_float(str,(float)(z_cart - offsetz));
+  json_append_comma_float(str,(float)(x*fdX));
+  json_append_comma_float(str,(float)(y*fdX));
+  // NE-corner:
+  x=gridsize-1; y=gridsize-1;
+  x_coord = x0 + x*dW; 
+  y_coord = y0 + y*dH;
+  elevation = heightmap[(gridsize-y-1)*gridsize+x]-curtainheight;
+  _MercatorToWGS84(x_coord,y_coord,&lng,&lat);
+  _WGS84ToCartesian(lng, lat, elevation, &x_cart, &y_cart, &z_cart);
+  json_append_comma_float(str,(float)(x_cart - offsetx));
+  json_append_comma_float(str,(float)(y_cart - offsety));
+  json_append_comma_float(str,(float)(z_cart - offsetz));
+  json_append_comma_float(str,(float)(x*fdX));
+  json_append_comma_float(str,(float)(y*fdX));
+    
+  
+  // point for west-border
+  for (i=1;i<gridsize-1;i++)
+  {
+    x = 0;
+    y = gridsize-1-i;
+    
+    json_append_int(str,x);
+    json_append_comma_int(str,y);
+    json_append_cstr(str,"\n");
+    
+    x_coord = x0 + x*dW; 
+    y_coord = y0 + y*dH;
+    elevation = heightmap[(gridsize-y-1)*gridsize+x]-curtainheight;
+    _MercatorToWGS84(x_coord,y_coord,&lng,&lat);
+    _WGS84ToCartesian(lng, lat, elevation, &x_cart, &y_cart, &z_cart);
+    json_append_comma_float(str,(float)(x_cart - offsetx));
+    json_append_comma_float(str,(float)(y_cart - offsety));
+    json_append_comma_float(str,(float)(z_cart - offsetz));
+    json_append_comma_float(str,(float)(x*fdX));
+    json_append_comma_float(str,(float)(y*fdX));
+  }
+  
+  // vertices for south-border
+  for (i=1;i<gridsize-1;i++)
+  {
+    x = i;
+    y = 0;
+    x_coord = x0 + x*dW; 
+    y_coord = y0 + y*dH;
+    elevation = heightmap[(gridsize-y-1)*gridsize+x]-curtainheight;
+    _MercatorToWGS84(x_coord,y_coord,&lng,&lat);
+    _WGS84ToCartesian(lng, lat, elevation, &x_cart, &y_cart, &z_cart);
+    json_append_comma_float(str,(float)(x_cart - offsetx));
+    json_append_comma_float(str,(float)(y_cart - offsety));
+    json_append_comma_float(str,(float)(z_cart - offsetz));
+    json_append_comma_float(str,(float)(x*fdX));
+    json_append_comma_float(str,(float)(y*fdX));
+  }
+  
+  // vertices for east-border
+  for (i=1;i<gridsize-1;i++)
+  {
+    x = gridsize-1;
+    y = i;
+    x_coord = x0 + x*dW; 
+    y_coord = y0 + y*dH;
+    elevation = heightmap[(gridsize-y-1)*gridsize+x]-curtainheight;
+    _MercatorToWGS84(x_coord,y_coord,&lng,&lat);
+    _WGS84ToCartesian(lng, lat, elevation, &x_cart, &y_cart, &z_cart);
+    json_append_comma_float(str,(float)(x_cart - offsetx));
+    json_append_comma_float(str,(float)(y_cart - offsety));
+    json_append_comma_float(str,(float)(z_cart - offsetz));
+    json_append_comma_float(str,(float)(x*fdX));
+    json_append_comma_float(str,(float)(y*fdX));
+  }
+  
+  // vertices for north-border
+  for (i=1;i<gridsize-1;i++)
+  {
+    x = gridsize-1-i;
+    y = gridsize-1;
+    x_coord = x0 + x*dW; 
+    y_coord = y0 + y*dH;
+    elevation = heightmap[(gridsize-y-1)*gridsize+x]-curtainheight;
+    _MercatorToWGS84(x_coord,y_coord,&lng,&lat);
+    _WGS84ToCartesian(lng, lat, elevation, &x_cart, &y_cart, &z_cart);
+    json_append_comma_float(str,(float)(x_cart - offsetx));
+    json_append_comma_float(str,(float)(y_cart - offsety));
+    json_append_comma_float(str,(float)(z_cart - offsetz));
+    json_append_comma_float(str,(float)(x*fdX));
+    json_append_comma_float(str,(float)(y*fdX));
+  }
+  
+  
   json_append_cstr(str, "],\n"); // end Vertices
   
   //-----------------
@@ -375,6 +504,7 @@ void _gen_json(json_string* str, float* heightmap, int gridsize, double x0, doub
       b = a+1;
       d = a+gridsize;
       c = d+1;
+
       
       if (i==0 && j==0)
       {
@@ -392,13 +522,89 @@ void _gen_json(json_string* str, float* heightmap, int gridsize, double x0, doub
       json_append_comma_int(str,c); 
     }
   }
+  
+  // Generate Indices for curtain
+  
+  int NW = gridsize*gridsize;
+  int SW = NW+1;
+  int SE = NW+2;
+  int NE = NW+3;
+  
+  // left curtain:
+  for (i=0;i<gridsize-1;i++)
+  {
+    int s,t,v,u;
+    s = (gridsize-i-1)*gridsize;
+    t = (gridsize-i-2)*gridsize;
+    if (i==0) { u = NW; } else { u=gridsize*gridsize+3+i; }
+    if (i==gridsize-2) { v = SW;} else { v=gridsize*gridsize+4+i; }
+    
+    json_append_comma_int(str,s);
+    json_append_comma_int(str,t);
+    json_append_comma_int(str,v);
+    json_append_comma_int(str,s);
+    json_append_comma_int(str,v);
+    json_append_comma_int(str,u);
+  }
    
+  
+  // bottom curtain
+  for (i=0;i<gridsize-1;i++)
+  {
+    int s,t,v,u;
+    s = i;
+    t = i+1;
+    if (i==0) { v = SW; } else { v=gridsize*gridsize+gridsize+1+i; }
+    if (i==gridsize-2) { u = SE;} else { u=gridsize*gridsize+gridsize+2+i; }
+    
+    json_append_comma_int(str,t);
+    json_append_comma_int(str,s);
+    json_append_comma_int(str,v);
+    json_append_comma_int(str,t);
+    json_append_comma_int(str,v);
+    json_append_comma_int(str,u);
+  }
+  
+  // right curtain
+  for (i=0;i<gridsize-1;i++)
+  {
+    int s,t,v,u;
+    s = (i+1)*gridsize-1;
+    t = (i+2)*gridsize-1;
+    if (i==0) { u = SE; } else { u=gridsize*gridsize+2*gridsize-1+i; }
+    if (i==gridsize-2) { v = NE;} else { v=gridsize*gridsize+2*gridsize+i; }
+    
+    json_append_comma_int(str,t);
+    json_append_comma_int(str,s);
+    json_append_comma_int(str,u);
+    json_append_comma_int(str,t);
+    json_append_comma_int(str,u);
+    json_append_comma_int(str,v);
+  }
+   
+  // top cutrain
+  for (i=0;i<gridsize-1;i++)
+  {
+    int s,t,v,u;
+    s = gridsize*gridsize-1-i;
+    t = s-1;
+    if (i==0) { u = NE; } else { u=gridsize*gridsize+3*gridsize-3+i; }
+    if (i==gridsize-2) { v = NW;} else { v=gridsize*gridsize+3*gridsize-2+i; }
+    
+    json_append_comma_int(str,t);
+    json_append_comma_int(str,s);
+    json_append_comma_int(str,u);
+    json_append_comma_int(str,t);
+    json_append_comma_int(str,u);
+    json_append_comma_int(str,v);
+  }
+  
   
   json_append_cstr(str, "],\n"); // end Indices
   
   
   //------------------------
-  // Generate INDEX SEMANTIC>x
+  // Generate INDEX SEMANTIC
   //------------------------
   
   json_append_cstr(str, "  \"IndexSemantic\": \"TRIANGLES\",\n");
