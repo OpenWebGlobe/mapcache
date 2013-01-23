@@ -270,7 +270,7 @@ void mapcache_image_copy_resampled_bilinear(mapcache_context *ctx, mapcache_imag
 
 void mapcache_image_metatile_split(mapcache_context *ctx, mapcache_metatile *mt)
 {
-  if (mt->map.raw_image->is_elevation == MC_ELEVATION_YES)
+  if (mt->map.raw_image && mt->map.raw_image->is_elevation == MC_ELEVATION_YES)
   {
     if(mt->map.tileset->format) {
       /* the tileset has a format defined, we will use it to encode the data */
