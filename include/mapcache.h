@@ -322,6 +322,7 @@ struct mapcache_source_tms {
   mapcache_source source;
   char* url;  /**< base URL of TMS service */
   char* layer; /**< name of layer to be used */
+  char* format; /**< format of tile ("png" or "jpg") */
   mapcache_http *http;
 };
 
@@ -1104,6 +1105,12 @@ mapcache_source* mapcache_source_gdal_create(mapcache_context *ctx);
  * \memberof mapcache_source_wms
  */
 mapcache_source* mapcache_source_wms_create(mapcache_context *ctx);
+
+/**
+ * \memberof mapcache_source_tms
+ */
+mapcache_source* mapcache_source_tms_create(mapcache_context *ctx);
+
 
 #ifdef USE_MAPSERVER
 /**
