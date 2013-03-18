@@ -60,6 +60,10 @@
 #include <apr_memcache.h>
 #endif
 
+#ifdef USE_S3
+#include <libs3.h>
+#endif
+
 #define MAPCACHE_SUCCESS 0
 #define MAPCACHE_FAILURE 1
 #define MAPCACHE_TRUE 1
@@ -102,6 +106,9 @@ typedef struct mapcache_source_gdal mapcache_source_gdal;
 typedef struct mapcache_cache_disk mapcache_cache_disk;
 #ifdef USE_TIFF
 typedef struct mapcache_cache_tiff mapcache_cache_tiff;
+#endif
+#ifdef USE_S3
+typedef struct mapcache_cache_s3 mapcache_cache_s3;
 #endif
 typedef struct mapcache_http mapcache_http;
 typedef struct mapcache_request mapcache_request;
@@ -383,6 +390,9 @@ typedef enum {
 #ifdef USE_TIFF
   ,MAPCACHE_CACHE_TIFF
 #endif
+#ifdef USE_S3
+  ,MAPCACHE_CACHE_S3
+#endif
 } mapcache_cache_type;
 
 /** \interface mapcache_cache
@@ -439,6 +449,30 @@ struct mapcache_cache_disk {
    */
   void (*tile_key)(mapcache_context *ctx, mapcache_tile *tile, char **path);
 };
+
+#ifdef USE_S3
+/**\class mapcache_cache_s3
+ * \brief a mapcache_cache on a Amazon S3
+ * \implements mapcache_cache
+ */
+struct mapcache_cache_s3 {
+  mapcache_cache cache;
+  char *base_directory;
+  char *filename_template;
+  char *access_key;
+  char *secret_key;
+  char *host; // for example "s3-eu-west-1.amazonaws.com"
+  char *bucket; // bucket-name
+  int symlink_blank;
+  int creation_retry;
+
+  /**
+   * Set filename for a given tile
+   * \memberof mapcache_cache_s3
+   */
+  void (*tile_key)(mapcache_context *ctx, mapcache_tile *tile, char **path);
+};
+#endif
 
 #ifdef USE_TIFF
 struct mapcache_cache_tiff {
