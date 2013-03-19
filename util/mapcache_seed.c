@@ -64,6 +64,10 @@ int nClippers = 0;
 const GEOSPreparedGeometry **clippers=NULL;
 #endif
 
+#ifdef USE_S3
+#include <libs3.h>
+#endif
+
 mapcache_tileset *tileset;
 mapcache_tileset *tileset_transfer;
 mapcache_cfg *cfg;
@@ -716,6 +720,15 @@ static int isPowerOfTwo(int x)
 
 int main(int argc, const char **argv)
 {
+#ifdef USE_S3
+    // To make S3 requests thread safe, S3 Library initialization must be put here...
+    S3Status status;
+    if ((status = S3_initialize("s3", S3_INIT_ALL, NULL)) != S3StatusOK) 
+    {
+      fprintf(stderr, "Failed to initialize libs3: %s\n", S3_get_status_name(status));
+      return -1;
+    }
+#endif
   /* initialize apr_getopt_t */
   apr_getopt_t *opt;
   const char *configfile=NULL;
@@ -1189,7 +1202,14 @@ int main(int argc, const char **argv)
     duration = ((now_t.tv_sec-starttime.tv_sec)*1000000+(now_t.tv_usec-starttime.tv_usec))/1000000.0;
     printf("\nseeded %d metatiles at %g tiles/sec\n",seededtilestot, seededtilestot/duration);
   }
+
+#ifdef USE_S3 
+  S3_deinitialize();
+#endif 
+  
   apr_terminate();
+  
+ 
   return 0;
 }
 /* vim: ts=2 sts=2 et sw=2

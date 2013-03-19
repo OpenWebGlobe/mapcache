@@ -520,6 +520,13 @@ void parseCache(mapcache_context *ctx, ezxml_t node, mapcache_cfg *config)
     ctx->set_error(ctx,400, "failed to add cache \"%s\": tiff support is not available on this build",name);
     return;
 #endif
+      } else if(!strcmp(type,"s3")) {
+#ifdef USE_S3
+    cache = mapcache_cache_s3_create(ctx);
+#else
+    ctx->set_error(ctx,400, "failed to add cache \"%s\": s3 support is not available on this build",name);
+    return;
+#endif
   } else {
     ctx->set_error(ctx, 400, "unknown cache type %s for cache \"%s\"", type, name);
     return;

@@ -38,75 +38,222 @@
 #include <errno.h>
 #include <apr_mmap.h>
 
-#ifdef HAVE_SYMLINK
-#include <unistd.h>
-#endif
 
-/**
- * \brief computes the relative path between two destinations
- *
- * \param tilename the absolute filename of the tile
- * \param blankname the absolute path of the blank tile image
- */
-
-char* s3_relative_path(mapcache_context *ctx, char* tilename, char* blankname)
+//------------------------------------------------------------------------------
+typedef struct object_userdata object_userdata;
+struct object_userdata
 {
-  int updir_cnt = 0;
-  char *blank_rel = "";
+    unsigned char* buffer;   // memory of buffer
+    
+    FILE* source;   // source file (or memory-stream) to put to S3
+    int   status;   // status of put: 
+                    //     0=ok, 
+                    //     1=file not found
+                    //     2=other error
+    int64_t length;       // size of file / buffer
+    int64_t lastModified; // last modified date
+    
+    
+    int64_t _memoryPos;    // current memory position (private)
+    int     _createbuffer; // create buffer ?
+};
 
-  /* work up the directory paths of the tile and blank filename to find the common
-   root */
-  char *tile_it = tilename, *blank_it = blankname;
-  if(*tile_it != *blank_it) {
-    /* the two files have no common root.
-     * This really shouldn't happen on a unix FS hierarchy, and symbolic linking
-     * is enabled only on these platforms, so this case should in practice never
-     * happen.
-     * we return the absolute path, and should probably set a warning message
-     */
-    return apr_pstrdup(ctx->pool, blankname);
-  }
-  while(*(tile_it+1) && *(blank_it+1) && *(tile_it+1) == *(blank_it+1)) {
-    tile_it++;
-    blank_it++;
-  }
+//------------------------------------------------------------------------------
 
-  /* tile_it and blank_it point on the last common character of the two filenames,
-   which should be a '/'. If not, return the full blank name
-   * (and set a warning message? )*/
-  if(*tile_it != *blank_it || *tile_it != '/') {
-    return apr_pstrdup(ctx->pool, blankname);
-  }
-
-  blank_it++;
-  while(*tile_it == '/') tile_it++; /*skip leading '/'s*/
-
-  /* blank_it now contains the path that must be appended after the relative
-   part of the constructed path,e.g.:
-     - tilename = "/basepath/tilesetname/gridname/03/000/05/08.png"
-     - blankname = "/basepath/tilesetname/gridname/blanks/005599FF.png"
-   then
-     - tile_it is "03/000/05/08.png"
-     - blank_it is "blanks/005599FF.png"
-   */
-
-  /* we now count the number of '/' in the remaining tilename */
-  while(*tile_it) {
-    if(*tile_it == '/') {
-      updir_cnt++;
-      /* also skip consecutive '/'s */
-      while(*(tile_it+1)=='/') tile_it++;
-    }
-    tile_it ++;
-  }
-
-  while(updir_cnt--) {
-    blank_rel = apr_pstrcat(ctx->pool, blank_rel, "../", NULL);
-  }
-  blank_rel = apr_pstrcat(ctx->pool,blank_rel,blank_it,NULL);
-  return blank_rel;
+S3Status responsePropertiesCallback(
+                const S3ResponseProperties *properties,
+                void *callbackData)
+{
+        object_userdata* data = (object_userdata*)callbackData;
+        
+        data->_memoryPos = 0;
+        data->length =  properties->contentLength;
+        data->lastModified = properties->lastModified;
+        
+        
+        if (data->length > 0 && data->_createbuffer)
+        {
+          data->buffer = (unsigned char*) malloc(data->length);
+        }
+       
+  
+        return S3StatusOK;
 }
 
+//------------------------------------------------------------------------------
+
+static void responseCompleteCallback(
+                S3Status status,
+                const S3ErrorDetails *error,
+                void *callbackData)
+{
+    object_userdata* data = (object_userdata*)callbackData;
+    
+    if (status == S3StatusOK)
+    {
+      data->status = 0;
+    }
+    else if (status == S3StatusErrorNoSuchKey)
+    {
+      data->status = 1;
+    }
+    else 
+    {
+      data->status = 2;
+    }
+    return;
+}
+
+//------------------------------------------------------------------------------
+
+S3ResponseHandler responseHandler =
+{
+        &responsePropertiesCallback,
+        &responseCompleteCallback
+};
+//------------------------------------------------------------------------------
+
+//------------------------------------------------------------------------------
+//------------------------------------------------------------------------------
+static S3Status getObjectDataCallback(int bufferSize, const char *buffer, void *callbackData)
+{  
+        object_userdata* data = (object_userdata*)callbackData;
+        
+        if (!data->buffer)
+        {
+            return S3StatusAbortedByCallback;
+        }
+          
+        if (bufferSize+data->_memoryPos > data->length)
+        {
+            return S3StatusAbortedByCallback;
+        }
+        
+        void* dest_adr = data->buffer+data->_memoryPos;
+        memcpy(dest_adr, buffer, bufferSize);
+        data->_memoryPos += bufferSize;
+        
+        return S3StatusOK;
+}
+
+//------------------------------------------------------------------------------
+static int putObjectDataCallback(int bufferSize, char *buffer, void *callbackData)
+{
+    object_userdata* data = (object_userdata*)callbackData;
+
+    int ret = 0;
+
+    if (data->_memoryPos >= data->length)
+    {
+      return 0;
+    }
+    
+    if (data->length)
+    {
+      memcpy(buffer, data->buffer+data->_memoryPos, bufferSize);
+      data->_memoryPos += bufferSize;
+      return bufferSize;
+    }
+    
+    return 0;
+}
+
+//------------------------------------------------------------------------------
+// Delete File:
+void DeleteS3(S3BucketContext* bucketContext, char* filename)
+{
+  object_userdata tmp;
+  tmp._createbuffer = 1;
+  
+  S3_delete_object(bucketContext, filename, NULL, &responseHandler, &tmp);
+}
+//------------------------------------------------------------------------------
+// Test if File exists:
+int ExistsS3(S3BucketContext* bucketContext, const char* filename)
+{
+  object_userdata tmp;
+  
+  tmp._createbuffer = 0; // don't create a buffer!
+  
+  S3_head_object(bucketContext, filename, NULL, &responseHandler, &tmp);
+  
+  if (tmp.status == 0)
+  {
+      return TRUE;
+  }
+  
+  return FALSE;
+}
+
+//------------------------------------------------------------------------------
+// Retrieve File:
+// Don't forget to call free after retrieving the file.
+void GetS3(S3BucketContext* bucketContext, const char* filename, object_userdata* gu)
+{
+  S3GetObjectHandler getObjectHandler;
+  getObjectHandler.responseHandler = responseHandler;
+  getObjectHandler.getObjectDataCallback = &getObjectDataCallback;
+
+  gu->_createbuffer = 1;
+  
+  S3_get_object(bucketContext,  // S3BucketContext
+                  filename,     // key
+                  NULL,            // S3GetConditions
+                  0,               // Start Byte
+                  0,               // Bytecount
+                  NULL,            // S3RequestContext
+                  &getObjectHandler, // S3GetObjectHandler
+                  gu);            // callbackData
+}
+//------------------------------------------------------------------------------
+// Put File:
+void SetS3(S3BucketContext* bucketContext, const char* filename, object_userdata* gu)
+{
+    S3PutObjectHandler putObjectHandler;
+    putObjectHandler.responseHandler = responseHandler;
+    putObjectHandler.putObjectDataCallback = &putObjectDataCallback;
+
+   gu->_createbuffer = 0;
+   if (gu->length == 0 || gu->buffer == 0)
+   {
+      return; // nothing to write...
+   }
+   gu->_memoryPos = 0;
+   
+   //---------------------------------------------------------------------
+   //---------------------------------------------------------------------
+   // WARNING: To support reduced redundandy libs3 must be modified:
+   //     In the header (libs3.h) change 
+   //           #define S3_METADATA_HEADER_NAME_PREFIX     "x-amz-meta-"
+   //    to     #define S3_METADATA_HEADER_NAME_PREFIX     "x-amz-"
+   //  and compile the library again. 
+   //  WARNING2: after this change you can't use metadata....
+   //  I don't know if there is another way... 
+   //   (...If there isn't, I will add header support to libs3 in future) 
+   //---------------------------------------------------------------------
+   //---------------------------------------------------------------------
+   
+   S3PutProperties putprop;
+   S3NameValue     storage_class;
+   storage_class.name = "storage-class";
+   storage_class.value = "REDUCED_REDUNDANCY";
+   
+   putprop.contentType = NULL;
+   putprop.md5 = NULL;
+   putprop.cacheControl = NULL;
+   putprop.contentDispositionFilename = NULL;
+   putprop.contentEncoding = NULL;
+   putprop.expires = 0;
+   putprop.cannedAcl = S3CannedAclPublicRead;  // this should be customized.
+                                               // use of S3CannedAclAuthenticatedRead if you don't want it to be public
+   putprop.metaDataCount = 1;
+   putprop.metaData = &storage_class;
+   putprop.useServerSideEncryption = 0;
+
+   
+   S3_put_object(bucketContext, filename, gu->length, &putprop, NULL, &putObjectHandler, gu);
+}
+//------------------------------------------------------------------------------
 /**
  * \brief returns base path for given tile
  *
@@ -132,23 +279,7 @@ static void _mapcache_cache_s3_base_tile_key(mapcache_context *ctx, mapcache_til
   }
 }
 
-static void _mapcache_cache_s3_blank_tile_key(mapcache_context *ctx, mapcache_tile *tile, unsigned char *color, char **path)
-{
-  /* not implemented for template caches, as symlink_blank will never be set */
-  *path = apr_psprintf(ctx->pool,"%s/%s/%s/blanks/%02X%02X%02X%02X.%s",
-                       ((mapcache_cache_s3*)tile->tileset->cache)->base_directory,
-                       tile->tileset->name,
-                       tile->grid_link->grid->name,
-                       color[0],
-                       color[1],
-                       color[2],
-                       color[3],
-                       tile->tileset->format?tile->tileset->format->extension:"png");
-  if(!*path) {
-    ctx->set_error(ctx,500, "failed to allocate blank tile key");
-  }
-}
-
+//------------------------------------------------------------------------------
 /**
  * \brief return filename for given tile
  *
@@ -163,7 +294,15 @@ static void _mapcache_cache_s3_tilecache_tile_key(mapcache_context *ctx, mapcach
   if(dcache->base_directory) {
     char *start;
     _mapcache_cache_s3_base_tile_key(ctx, tile, &start);
-    *path = apr_psprintf(ctx->pool,"%s/%02d/%03d/%03d/%03d/%03d/%03d/%03d.%s",
+    
+    *path = apr_psprintf(ctx->pool,"%s/%u/%u/%u.%s" ,
+                         start,
+                         tile->z,
+                         tile->y,
+                         tile->x,
+                         tile->tileset->format?tile->tileset->format->extension:"png");
+    
+    /**path = apr_psprintf(ctx->pool,"%s/%02d/%03d/%03d/%03d/%03d/%03d/%03d.%s",
                          start,
                          tile->z,
                          tile->x / 1000000,
@@ -172,7 +311,7 @@ static void _mapcache_cache_s3_tilecache_tile_key(mapcache_context *ctx, mapcach
                          tile->y / 1000000,
                          (tile->y / 1000) % 1000,
                          tile->y % 1000,
-                         tile->tileset->format?tile->tileset->format->extension:"png");
+                         tile->tileset->format?tile->tileset->format->extension:"png");*/
   } else {
     *path = dcache->filename_template;
     *path = mapcache_util_str_replace(ctx->pool,*path, "{tileset}", tile->tileset->name);
@@ -224,6 +363,8 @@ static void _mapcache_cache_s3_tilecache_tile_key(mapcache_context *ctx, mapcach
     ctx->set_error(ctx,500, "failed to allocate tile key");
   }
 }
+
+//------------------------------------------------------------------------------
 
 static void _mapcache_cache_s3_template_tile_key(mapcache_context *ctx, mapcache_tile *tile, char **path)
 {
@@ -281,6 +422,8 @@ static void _mapcache_cache_s3_template_tile_key(mapcache_context *ctx, mapcache
   }
 }
 
+//------------------------------------------------------------------------------
+
 static void _mapcache_cache_s3_arcgis_tile_key(mapcache_context *ctx, mapcache_tile *tile, char **path)
 {
   mapcache_cache_s3 *dcache = (mapcache_cache_s3*)tile->tileset->cache;
@@ -300,22 +443,36 @@ static void _mapcache_cache_s3_arcgis_tile_key(mapcache_context *ctx, mapcache_t
   }
 }
 
-
+//------------------------------------------------------------------------------
+// EXISTS ?
 static int _mapcache_cache_s3_has_tile(mapcache_context *ctx, mapcache_tile *tile)
 {
+  mapcache_cache_s3* cache;
   char *filename;
   apr_finfo_t finfo;
   int rv;
-  ((mapcache_cache_s3*)tile->tileset->cache)->tile_key(ctx, tile, &filename);
+  
+  cache = (mapcache_cache_s3*)tile->tileset->cache;
+  
+  cache->tile_key(ctx, tile, &filename);
   if(GC_HAS_ERROR(ctx)) {
     return MAPCACHE_FALSE;
   }
-  rv = apr_stat(&finfo,filename,0,ctx->pool);
-  if(rv != APR_SUCCESS) {
-    return MAPCACHE_FALSE;
-  } else {
+  
+  S3BucketContext bucketContext;
+  bucketContext.hostName = cache->host;
+  bucketContext.bucketName = cache->bucket;
+  bucketContext.protocol = S3ProtocolHTTP;
+  bucketContext.uriStyle = S3UriStylePath;
+  bucketContext.accessKeyId = cache->access_key;
+  bucketContext.secretAccessKey = cache->secret_key;
+  
+  if (ExistsS3(&bucketContext, filename))
+  {
     return MAPCACHE_TRUE;
   }
+  
+  return MAPCACHE_FALSE;
 }
 
 //------------------------------------------------------------------------------
@@ -324,16 +481,24 @@ static int _mapcache_cache_s3_has_tile(mapcache_context *ctx, mapcache_tile *til
 static void _mapcache_cache_s3_delete(mapcache_context *ctx, mapcache_tile *tile)
 {
   apr_status_t ret;
+  mapcache_cache_s3* cache;
   char errmsg[120];
   char *filename;
-  ((mapcache_cache_s3*)tile->tileset->cache)->tile_key(ctx, tile, &filename);
+  
+  cache = (mapcache_cache_s3*)tile->tileset->cache;
+  cache->tile_key(ctx, tile, &filename);
   GC_CHECK_ERROR(ctx);
+  
+  S3BucketContext bucketContext;
+  bucketContext.hostName = cache->host;
+  bucketContext.bucketName = cache->bucket;
+  bucketContext.protocol = S3ProtocolHTTP;
+  bucketContext.uriStyle = S3UriStylePath;
+  bucketContext.accessKeyId = cache->access_key;
+  bucketContext.secretAccessKey = cache->secret_key;
 
-  // #todo: call S3_delete_object
-  ret = apr_file_remove(filename,ctx->pool);
-  if(ret != APR_SUCCESS && !APR_STATUS_IS_ENOENT(ret)) {
-    ctx->set_error(ctx, 500,  "failed to remove file %s: %s",filename, apr_strerror(ret,errmsg,120));
-  }
+  DeleteS3(&bucketContext, filename);
+
 }
 
 //------------------------------------------------------------------------------
@@ -348,95 +513,72 @@ static void _mapcache_cache_s3_delete(mapcache_context *ctx, mapcache_tile *tile
 static int _mapcache_cache_s3_get(mapcache_context *ctx, mapcache_tile *tile)
 {
   char *filename;
-  apr_file_t *f;
-  apr_finfo_t finfo;
-  apr_status_t rv;
-  apr_size_t size;
-  apr_mmap_t *tilemmap;
+  mapcache_cache_s3* cache;
 
-  ((mapcache_cache_s3*)tile->tileset->cache)->tile_key(ctx, tile, &filename);
-  if(GC_HAS_ERROR(ctx)) {
+  cache = (mapcache_cache_s3*)tile->tileset->cache;
+  cache->tile_key(ctx, tile, &filename);
+  if(GC_HAS_ERROR(ctx)) 
+  {
     return MAPCACHE_FAILURE;
   }
   
-  if((rv=apr_file_open(&f, filename,
-#ifndef NOMMAP
-                       APR_FOPEN_READ, APR_UREAD | APR_GREAD,
-#else
-                       APR_FOPEN_READ|APR_FOPEN_BUFFERED|APR_FOPEN_BINARY,APR_OS_DEFAULT,
-#endif
-                       ctx->pool)) == APR_SUCCESS) {
-    rv = apr_file_info_get(&finfo, APR_FINFO_SIZE|APR_FINFO_MTIME, f);
-    if(!finfo.size) {
-      ctx->set_error(ctx, 500, "tile %s has no data",filename);
-      return MAPCACHE_FAILURE;
-    }
-
-    size = finfo.size;
-    /*
-     * at this stage, we have a handle to an open file that contains data.
-     * idealy, we should aquire a read lock, in case the data contained inside the file
-     * is incomplete (i.e. if another process is currently writing to the tile).
-     * currently such a lock is not set, as we don't want to loose performance on tile accesses.
-     * any error that might happen at this stage should only occur if the tile isn't already cached,
-     * i.e. normally only once.
-     */
-    tile->mtime = finfo.mtime;
-    tile->encoded_data = mapcache_buffer_create(size,ctx->pool);
-
-#ifndef NOMMAP
-
-    rv = apr_mmap_create(&tilemmap,f,0,finfo.size,APR_MMAP_READ,ctx->pool);
-    if(rv != APR_SUCCESS) {
-      char errmsg[120];
-      ctx->set_error(ctx, 500,  "mmap error: %s",apr_strerror(rv,errmsg,120));
-      return MAPCACHE_FAILURE;
-    }
-    tile->encoded_data->buf = tilemmap->mm;
-    tile->encoded_data->size = tile->encoded_data->avail = finfo.size;
-#else
-    //manually add the data to our buffer
-    apr_file_read(f,(void*)tile->encoded_data->buf,&size);
-    tile->encoded_data->size = size;
-    tile->encoded_data->avail = size;
-#endif
-    apr_file_close(f);
-    if(tile->encoded_data->size != finfo.size) {
-      ctx->set_error(ctx, 500,  "failed to copy image data, got %d of %d bytes",(int)size, (int)finfo.size);
-      return MAPCACHE_FAILURE;
-    }
-    return MAPCACHE_SUCCESS;
-  } else {
-    if(APR_STATUS_IS_ENOENT(rv)) {
-      /* the file doesn't exist on the disk */
-      return MAPCACHE_CACHE_MISS;
-    } else {
-      char *error = strerror(rv);
-      ctx->set_error(ctx, 500,  "failed to open file %s: %s",filename, error);
-      return MAPCACHE_FAILURE;
+  //ctx->log(ctx,MAPCACHE_NOTICE,"GET Tile %s", filename);
+  
+  S3BucketContext bucketContext;
+  bucketContext.hostName = cache->host;
+  bucketContext.bucketName = cache->bucket;
+  bucketContext.protocol = S3ProtocolHTTP;
+  bucketContext.uriStyle = S3UriStylePath;
+  bucketContext.accessKeyId = cache->access_key;
+  bucketContext.secretAccessKey = cache->secret_key;
+  
+  object_userdata gu;
+  
+  GetS3(&bucketContext, filename, &gu);
+    
+  if (gu.status == 0)
+  {
+    // tile downloaded successfully
+    if (gu.buffer)
+    {
+      tile->encoded_data = gu.buffer;
+      tile->encoded_data->size = gu.length;
+      tile->encoded_data->avail = gu.length;
+      tile->mtime = gu.lastModified;
+      
+      // custom cleanup buffer: (mem was allocated with malloc...)
+      apr_pool_cleanup_register(ctx->pool, gu.buffer,(void*)free, apr_pool_cleanup_null);
+      return MAPCACHE_SUCCESS;
     }
   }
+  else if (gu.status == 1)
+  {
+    return MAPCACHE_CACHE_MISS; // doesn't exist...
+  }
+  
+  return MAPCACHE_FAILURE;
+ 
 }
 
 //------------------------------------------------------------------------------
 
 /**
- * \brief write tile data to disk
+ * \brief write tile data to S3
  *
  * writes the content of mapcache_tile::data to disk.
- * \returns MAPCACHE_FAILURE if there is no data to write, or if the tile isn't locked
- * \returns MAPCACHE_SUCCESS if the tile has been successfully written to disk
+ * \returns MAPCACHE_FAILURE if there is no data to write
+ * \returns MAPCACHE_SUCCESS if the tile has been successfully written to S3
  * \private \memberof mapcache_cache_s3
  * \sa mapcache_cache::tile_set()
  */
 static void _mapcache_cache_s3_set(mapcache_context *ctx, mapcache_tile *tile)
 {
   apr_size_t bytes;
-  apr_file_t *f;
-  apr_status_t ret;
   char errmsg[120];
-  char *filename, *hackptr1, *hackptr2=NULL;
-  const int creation_retry = ((mapcache_cache_s3*)tile->tileset->cache)->creation_retry;
+  char *filename;
+  mapcache_cache_s3* cache;
+  
+  cache = (mapcache_cache_s3*)tile->tileset->cache;
 
 #ifdef DEBUG
   /* all this should be checked at a higher level */
@@ -450,193 +592,30 @@ static void _mapcache_cache_s3_set(mapcache_context *ctx, mapcache_tile *tile)
   }
 #endif
 
-  ((mapcache_cache_s3*)tile->tileset->cache)->tile_key(ctx, tile, &filename);
+  cache->tile_key(ctx, tile, &filename);
   GC_CHECK_ERROR(ctx);
-
-  /* find the location of the last '/' in the string */
-  hackptr1 = filename;
-  while(*hackptr1) {
-    if(*hackptr1 == '/')
-      hackptr2 = hackptr1;
-    hackptr1++;
-  }
-  *hackptr2 = '\0';
-
-  if(APR_SUCCESS != (ret = apr_dir_make_recursive(filename,APR_OS_DEFAULT,ctx->pool))) {
-    /*
-     * apr_dir_make_recursive sometimes sends back this error, although it should not.
-     * ignore this one
-     */
-    if(!APR_STATUS_IS_EEXIST(ret)) {
-      ctx->set_error(ctx, 500, "failed to create directory %s: %s",filename, apr_strerror(ret,errmsg,120));
-      return;
-    }
-  }
-  *hackptr2 = '/';
-
-  ret = apr_file_remove(filename,ctx->pool);
-  if(ret != APR_SUCCESS && !APR_STATUS_IS_ENOENT(ret)) {
-    ctx->set_error(ctx, 500,  "failed to remove file %s: %s",filename, apr_strerror(ret,errmsg,120));
-  }
-
-
-#ifdef HAVE_SYMLINK
-  if(((mapcache_cache_s3*)tile->tileset->cache)->symlink_blank) {
-    if(!tile->raw_image) {
-      tile->raw_image = mapcache_imageio_decode(ctx, tile->encoded_data);
-      GC_CHECK_ERROR(ctx);
-    }
-    if(mapcache_image_blank_color(tile->raw_image) != MAPCACHE_FALSE) {
-      char *blankname;
-      _mapcache_cache_s3_blank_tile_key(ctx,tile,tile->raw_image->data,&blankname);
-      if(apr_file_open(&f, blankname, APR_FOPEN_READ, APR_OS_DEFAULT, ctx->pool) != APR_SUCCESS) {
-        if(!tile->encoded_data) {
-          tile->encoded_data = tile->tileset->format->write(ctx, tile->raw_image, tile->tileset->format);
-          GC_CHECK_ERROR(ctx);
-        }
-        /* create the blank file */
-        char *blankdirname = apr_psprintf(ctx->pool, "%s/%s/%s/blanks",
-                                          ((mapcache_cache_s3*)tile->tileset->cache)->base_directory,
-                                          tile->tileset->name,
-                                          tile->grid_link->grid->name);
-        if(APR_SUCCESS != (ret = apr_dir_make_recursive(
-                                   blankdirname, APR_OS_DEFAULT,ctx->pool))) {
-          if(!APR_STATUS_IS_EEXIST(ret)) {
-            ctx->set_error(ctx, 500,  "failed to create directory %s for blank tiles",blankdirname, apr_strerror(ret,errmsg,120));
-            return;
-          }
-        }
-
-        /* aquire a lock on the blank file */
-        int isLocked = mapcache_lock_or_wait_for_resource(ctx,blankname);
-
-        if(isLocked == MAPCACHE_TRUE) {
-
-          if((ret = apr_file_open(&f, blankname,
-                                  APR_FOPEN_CREATE|APR_FOPEN_WRITE|APR_FOPEN_BUFFERED|APR_FOPEN_BINARY,
-                                  APR_OS_DEFAULT, ctx->pool)) != APR_SUCCESS) {
-            ctx->set_error(ctx, 500,  "failed to create file %s: %s",blankname, apr_strerror(ret,errmsg,120));
-            mapcache_unlock_resource(ctx,blankname);
-            return; /* we could not create the file */
-          }
-
-          bytes = (apr_size_t)tile->encoded_data->size;
-          ret = apr_file_write(f,(void*)tile->encoded_data->buf,&bytes);
-          if(ret != APR_SUCCESS) {
-            ctx->set_error(ctx, 500,  "failed to write data to file %s (wrote %d of %d bytes): %s",blankname, (int)bytes, (int)tile->encoded_data->size, apr_strerror(ret,errmsg,120));
-            mapcache_unlock_resource(ctx,blankname);
-            return; /* we could not create the file */
-          }
-
-          if(bytes != tile->encoded_data->size) {
-            ctx->set_error(ctx, 500,  "failed to write image data to %s, wrote %d of %d bytes", blankname, (int)bytes, (int)tile->encoded_data->size);
-            mapcache_unlock_resource(ctx,blankname);
-            return;
-          }
-          apr_file_close(f);
-          mapcache_unlock_resource(ctx,blankname);
-#ifdef DEBUG
-          ctx->log(ctx,MAPCACHE_DEBUG,"created blank tile %s",blankname);
-#endif
-        }
-      } else {
-        apr_file_close(f);
-      }
-
-      int retry_count_create_symlink = 0;
-
-      /*
-       * compute the relative path between tile and blank tile
-       */
-      char *blankname_rel = NULL;
-      blankname_rel = s3_relative_path(ctx,filename, blankname);
-      GC_CHECK_ERROR(ctx);
-
-      /*
-       * depending on configuration symlink creation will retry if it fails.
-       * this can happen on nfs mounted network storage.
-       * the solution is to create the containing directory again and retry the symlink creation.
-       */
-      while(symlink(blankname_rel, filename) != 0) {
-        retry_count_create_symlink++;
-
-        if(retry_count_create_symlink > creation_retry) {
-          char *error = strerror(errno);
-          ctx->set_error(ctx, 500, "failed to link tile %s to %s: %s",filename, blankname_rel, error);
-          return; /* we could not create the file */
-        }
-
-        *hackptr2 = '\0';
-
-        if(APR_SUCCESS != (ret = apr_dir_make_recursive(filename,APR_OS_DEFAULT,ctx->pool))) {
-          if(!APR_STATUS_IS_EEXIST(ret)) {
-            ctx->set_error(ctx, 500, "failed to create symlink, can not create directory %s: %s",filename, apr_strerror(ret,errmsg,120));
-            return; /* we could not create the file */
-          }
-        }
-
-        *hackptr2 = '/';
-      }
-#ifdef DEBUG
-      ctx->log(ctx, MAPCACHE_DEBUG, "linked blank tile %s to %s",filename,blankname);
-#endif
-      return;
-    }
-  }
-#endif /*HAVE_SYMLINK*/
-
-  /* go the normal way: either we haven't configured blank tile detection, or the tile was not blank */
-
-  if(!tile->encoded_data) {
+  
+  if(!tile->encoded_data) 
+  {
     tile->encoded_data = tile->tileset->format->write(ctx, tile->raw_image, tile->tileset->format);
     GC_CHECK_ERROR(ctx);
   }
+  
+  S3BucketContext bucketContext;
+  bucketContext.hostName = cache->host;
+  bucketContext.bucketName = cache->bucket;
+  bucketContext.protocol = S3ProtocolHTTP;
+  bucketContext.uriStyle = S3UriStylePath;
+  bucketContext.accessKeyId = cache->access_key;
+  bucketContext.secretAccessKey = cache->secret_key;
+  
+  object_userdata gu;
+    
 
-  int retry_count_create_file = 0;
-  /*
-   * depending on configuration file creation will retry if it fails.
-   * this can happen on nfs mounted network storage.
-   * the solution is to create the containing directory again and retry the file creation.
-   */
-  while((ret = apr_file_open(&f, filename,
-                             APR_FOPEN_CREATE|APR_FOPEN_WRITE|APR_FOPEN_BUFFERED|APR_FOPEN_BINARY,
-                             APR_OS_DEFAULT, ctx->pool)) != APR_SUCCESS) {
-
-    retry_count_create_file++;
-
-    if(retry_count_create_file > creation_retry) {
-      ctx->set_error(ctx, 500, "failed to create file %s: %s",filename, apr_strerror(ret,errmsg,120));
-      return; /* we could not create the file */
-    }
-
-    *hackptr2 = '\0';
-
-    if(APR_SUCCESS != (ret = apr_dir_make_recursive(filename,APR_OS_DEFAULT,ctx->pool))) {
-      if(!APR_STATUS_IS_EEXIST(ret)) {
-        ctx->set_error(ctx, 500, "failed to create file, can not create directory %s: %s",filename, apr_strerror(ret,errmsg,120));
-        return; /* we could not create the file */
-      }
-    }
-
-    *hackptr2 = '/';
-  }
-
-  bytes = (apr_size_t)tile->encoded_data->size;
-  ret = apr_file_write(f,(void*)tile->encoded_data->buf,&bytes);
-  if(ret != APR_SUCCESS) {
-    ctx->set_error(ctx, 500,  "failed to write data to file %s (wrote %d of %d bytes): %s",filename, (int)bytes, (int)tile->encoded_data->size, apr_strerror(ret,errmsg,120));
-    return; /* we could not create the file */
-  }
-
-  if(bytes != tile->encoded_data->size) {
-    ctx->set_error(ctx, 500, "failed to write image data to %s, wrote %d of %d bytes", filename, (int)bytes, (int)tile->encoded_data->size);
-  }
-  ret = apr_file_close(f);
-  if(ret != APR_SUCCESS) {
-    ctx->set_error(ctx, 500,  "failed to close file %s:%s",filename, apr_strerror(ret,errmsg,120));
-    return; /* we could not create the file */
-  }
-
+  gu.buffer = (unsigned char*) tile->encoded_data->buf;
+  gu.length = tile->encoded_data->size;
+   
+  SetS3(&bucketContext,filename, &gu);
 }
 
 //------------------------------------------------------------------------------
@@ -650,43 +629,59 @@ static void _mapcache_cache_s3_configuration_parse_xml(mapcache_context *ctx, ez
   mapcache_cache_s3 *dcache = (mapcache_cache_s3*)cache;
   char *layout = NULL;
   int template_layout = MAPCACHE_FALSE;
-
+ 
   layout = (char*)ezxml_attr(node,"layout");
-  if (!layout || !strlen(layout) || !strcmp(layout,"tilecache")) {
+  if (!layout || !strlen(layout) || !strcmp(layout,"tilecache")) 
+  {
     dcache->tile_key = _mapcache_cache_s3_tilecache_tile_key;
-  } else if(!strcmp(layout,"arcgis")) {
+  } 
+  else if(!strcmp(layout,"arcgis")) 
+  {
     dcache->tile_key = _mapcache_cache_s3_arcgis_tile_key;
-  } else if (!strcmp(layout,"template")) {
+  } 
+  else if (!strcmp(layout,"template")) 
+  {
     dcache->tile_key = _mapcache_cache_s3_template_tile_key;
     template_layout = MAPCACHE_TRUE;
-    if ((cur_node = ezxml_child(node,"template")) != NULL) {
+    if ((cur_node = ezxml_child(node,"template")) != NULL) 
+    {
       dcache->filename_template = apr_pstrdup(ctx->pool,cur_node->txt);
-    } else {
+    } 
+    else 
+    {
       ctx->set_error(ctx, 400, "no template specified for cache \"%s\"", cache->name);
       return;
     }
-  } else {
+  } 
+  else 
+  {
     ctx->set_error(ctx, 400, "unknown layout type %s for cache \"%s\"", layout, cache->name);
     return;
   }
 
-  if (!template_layout && (cur_node = ezxml_child(node,"base")) != NULL) {
+  if (!template_layout && (cur_node = ezxml_child(node,"base")) != NULL) 
+  {
     dcache->base_directory = apr_pstrdup(ctx->pool,cur_node->txt);
   }
 
-  if (!template_layout && (cur_node = ezxml_child(node,"symlink_blank")) != NULL) {
-    if(strcasecmp(cur_node->txt,"false")) {
-#ifdef HAVE_SYMLINK
-      dcache->symlink_blank=1;
-#else
-      ctx->set_error(ctx,400,"cache %s: host system does not support file symbolic linking",cache->name);
-      return;
-#endif
-    }
+  if ((cur_node = ezxml_child(node,"access_key")) != NULL) 
+  {
+    dcache->access_key = apr_pstrdup(ctx->pool,cur_node->txt);
   }
-
-  if ((cur_node = ezxml_child(node,"creation_retry")) != NULL) {
-    dcache->creation_retry = atoi(cur_node->txt);
+  
+  if ((cur_node = ezxml_child(node,"secret_key")) != NULL) 
+  {
+    dcache->secret_key = apr_pstrdup(ctx->pool,cur_node->txt);
+  }
+  
+  if ((cur_node = ezxml_child(node,"host")) != NULL) 
+  {
+    dcache->host = apr_pstrdup(ctx->pool,cur_node->txt);
+  }
+  
+  if ((cur_node = ezxml_child(node,"bucket")) != NULL) 
+  {
+    dcache->bucket = apr_pstrdup(ctx->pool,cur_node->txt);
   }
 }
 
@@ -701,8 +696,16 @@ static void _mapcache_cache_s3_configuration_post_config(mapcache_context *ctx, 
   mapcache_cache_s3 *dcache = (mapcache_cache_s3*)cache;
   /* check all required parameters are configured */
   if((!dcache->base_directory || !strlen(dcache->base_directory)) &&
-      (!dcache->filename_template || !strlen(dcache->filename_template))) {
-    ctx->set_error(ctx, 400, "disk cache %s has no base directory or template",dcache->cache.name);
+      (!dcache->filename_template || !strlen(dcache->filename_template))) 
+  {
+    ctx->set_error(ctx, 400, "s3 cache %s has no base directory or template",dcache->cache.name);
+    return;
+  }
+  
+  if (!dcache->access_key || !dcache->secret_key || !dcache->host || !dcache->bucket)
+  {
+    ctx->set_error(ctx, 400, "s3 cache %s has must set access key, secret key, host, and bucket name!",
+                      dcache->cache.name);
     return;
   }
 }
@@ -713,12 +716,16 @@ static void _mapcache_cache_s3_configuration_post_config(mapcache_context *ctx, 
 mapcache_cache* mapcache_cache_s3_create(mapcache_context *ctx)
 {
   mapcache_cache_s3 *cache = apr_pcalloc(ctx->pool,sizeof(mapcache_cache_s3));
-  if(!cache) {
+  if(!cache) 
+  {
     ctx->set_error(ctx, 500, "failed to allocate s3 cache");
     return NULL;
   }
-  cache->symlink_blank = 0;
-  cache->creation_retry = 0;
+
+  cache->access_key = 0;
+  cache->secret_key = 0;
+  cache->host = 0;
+  cache->bucket = 0;
   cache->cache.metadata = apr_table_make(ctx->pool,3);
   cache->cache.type = MAPCACHE_CACHE_S3;
   cache->cache.tile_delete = _mapcache_cache_s3_delete;

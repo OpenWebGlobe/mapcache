@@ -22,3 +22,33 @@ make sure to install gdal and libs3 and its dependencies.
 (libs3 can be retrieved from: http://git.ischo.com/libs3.git)
 (more info about libs3: http://libs3.ischo.com.s3.amazonaws.com/index.html)
 
+
+Example Configurations:
+
+Elevation:
+  <source name="SRTM" type="gdal">
+     <data>/data/srtm.vrt</data>            
+  </source>
+  <format name="myjson" type="JSON">
+  </format> 
+  <tileset name="gdal-json-srtm">
+     <source>SRTM</source>
+     <cache>mycache</cache>
+     <grid>mygrid</grid>
+     <format>myjson</format>
+     <auto_expire>86400</auto_expire>
+     <elevation/>
+  </tileset>
+
+S3-Cache:
+  <cache name="s3cache" type="s3">
+    <base>tiles</base>
+    <host>s3-eu-west-1.amazonaws.com</host>
+    <bucket>owgcache</bucket>
+    <access_key>HERE_IS_THE_ACCESS_KEY</access_key>
+    <secret_key>and_here_is_secret_key</secret_key>
+  </cache>
+
+  
+  
+

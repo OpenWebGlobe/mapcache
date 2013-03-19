@@ -621,7 +621,7 @@ void _mapcache_source_gdal_render_map_image(mapcache_context *ctx, mapcache_map 
   OGRCoordinateTransformationH pCTBack;
   OGRCoordinateTransformationH pCTWGS84 = NULL;
   
-  double quality = 2.0;
+  double quality = 2;
   
   OGRSpatialReferenceH srcref;
   OGRSpatialReferenceH dstref;

@@ -53,6 +53,10 @@ apr_thread_mutex_t *thread_mutex = NULL;
 #include "unixd.h"
 #endif
 
+#ifdef USE_S3
+#include <libs3.h>
+#endif
+
 module AP_MODULE_DECLARE_DATA mapcache_module;
 
 typedef struct mapcache_context_apache mapcache_context_apache;
@@ -249,8 +253,21 @@ static int write_http_response(mapcache_context_apache_request *ctx, mapcache_ht
 
 }
 
+#ifdef USE_S3
+apr_status_t unregisterS3(void* param)
+{
+  S3_deinitialize();
+  return 0;
+}
+#endif
+
 static void mod_mapcache_child_init(apr_pool_t *pool, server_rec *s)
 {
+#ifdef USE_S3
+   S3_initialize("s3", S3_INIT_ALL, NULL);
+   apr_pool_cleanup_run(pool,NULL, unregisterS3);
+#endif
+   
   pchild = pool;
 #ifdef APR_HAS_THREADS
   int threaded;
@@ -259,6 +276,8 @@ static void mod_mapcache_child_init(apr_pool_t *pool, server_rec *s)
     apr_thread_mutex_create(&thread_mutex,APR_THREAD_MUTEX_DEFAULT,pool);
   }
 #endif
+
+
 }
 
 static int mod_mapcache_request_handler(request_rec *r)

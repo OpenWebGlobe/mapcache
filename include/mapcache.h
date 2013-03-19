@@ -463,8 +463,6 @@ struct mapcache_cache_s3 {
   char *secret_key;
   char *host; // for example "s3-eu-west-1.amazonaws.com"
   char *bucket; // bucket-name
-  int symlink_blank;
-  int creation_retry;
 
   /**
    * Set filename for a given tile
@@ -1167,6 +1165,13 @@ mapcache_cache* mapcache_cache_disk_create(mapcache_context *ctx);
 mapcache_cache* mapcache_cache_tiff_create(mapcache_context *ctx);
 #endif
 
+#ifdef USE_S3
+/**
+ * \memberof mapcache_cache_s3
+ */
+mapcache_cache* mapcache_cache_s3_create(mapcache_context *ctx);
+
+#endif
 
 /** \defgroup tileset Tilesets*/
 /** @{ */
