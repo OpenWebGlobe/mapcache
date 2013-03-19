@@ -547,9 +547,7 @@ static int _mapcache_cache_s3_get(mapcache_context *ctx, mapcache_tile *tile)
       tile->encoded_data->avail = (int)gu.length;
       tile->encoded_data->pool = 0;
       tile->mtime = 0 ; // gu.lastModified; // #todo this must be converted...
-      
-      ctx->log(ctx,MAPCACHE_NOTICE,"GET Tile");
-      
+     
       // custom cleanup buffer: (mem was allocated with malloc...)
       apr_pool_cleanup_register(ctx->pool, gu.buffer,(void*)free, apr_pool_cleanup_null);
       return MAPCACHE_SUCCESS;
