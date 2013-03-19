@@ -541,10 +541,14 @@ static int _mapcache_cache_s3_get(mapcache_context *ctx, mapcache_tile *tile)
     // tile downloaded successfully
     if (gu.buffer)
     {
-      tile->encoded_data = gu.buffer;
-      tile->encoded_data->size = gu.length;
-      tile->encoded_data->avail = gu.length;
-      tile->mtime = gu.lastModified;
+      tile->encoded_data = mapcache_buffer_create(sizeof(mapcache_buffer),ctx->pool);
+      tile->encoded_data->buf = (char*)gu.buffer;
+      tile->encoded_data->size = (int)gu.length;
+      tile->encoded_data->avail = (int)gu.length;
+      tile->encoded_data->pool = 0;
+      tile->mtime = 0 ; // gu.lastModified; // #todo this must be converted...
+      
+      ctx->log(ctx,MAPCACHE_NOTICE,"GET Tile");
       
       // custom cleanup buffer: (mem was allocated with malloc...)
       apr_pool_cleanup_register(ctx->pool, gu.buffer,(void*)free, apr_pool_cleanup_null);
