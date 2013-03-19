@@ -1807,5 +1807,20 @@ else
    AC_SUBST(TC_LIB, "")
 fi
 
+AC_ARG_WITH(s3,
+    AC_HELP_STRING([--with-s3],[Enable caching on Amazon S3 (experimental)]),
+    ,
+    [with_s3=no]
+)
+if test $with_s3 == "yes"; then
+   AC_SUBST(S3_ENABLED, "-DUSE_S3")
+   AC_SUBST(S3_INC,"")
+   AC_SUBST(S3_LIB, "-ls3")
+else
+   AC_SUBST(S3_ENABLED, "")
+   AC_SUBST(S3_INC,"")
+   AC_SUBST(S3_LIB, "")
+fi
+
 
 AC_OUTPUT
