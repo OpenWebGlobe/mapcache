@@ -1,2 +1,24 @@
-new code repository is at https://github.com/mapserver/mapcache
+original code repository is at https://github.com/mapserver/mapcache
+repository of this version: https://github.com/OpenWebGlobe/mapcache
+
+This version of MapCache is modified, it has
+
+* improved GDAL support (source_gdal)
+* support for OpenWebGlobe tile format (service_owg)
+* support for elevation tiles, coloring or float32 RGBA encoding
+* support for OpenWebGlobe JSON elevation tiles 
+* experimental support for TMS input (service_tms)
+* S3 support (cache_s3)
+
+and many more features are planned. All features are still in "experimental" 
+state.
+
+################################################################################  
+  
+To enabled all new features, run configure this way:  
+./configure --with-gdal --with-s3
+
+make sure to install gdal and libs3 and its dependencies.
+(libs3 can be retrieved from: http://git.ischo.com/libs3.git)
+(more info about libs3: http://libs3.ischo.com.s3.amazonaws.com/index.html)
 
