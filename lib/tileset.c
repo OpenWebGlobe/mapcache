@@ -653,11 +653,27 @@ void mapcache_tileset_tile_get(mapcache_context *ctx, mapcache_tile *tile)
       /* this will query the source to create the tiles, and save them to the cache */
       mapcache_tileset_render_metatile(ctx, mt);
 
+      // use the rendererd tile as output instead of re-getting from cache
+      if (mt->ntiles==1 && mt->tiles && mt->tiles[0].encoded_data)
+      {
+        size_t size = mt->tiles[0].encoded_data->size;
+        
+        tile->encoded_data = mapcache_buffer_create(sizeof(mapcache_buffer),ctx->pool);
+        tile->encoded_data->buf = malloc(size);//mapcache_buffer_create(size,ctx->pool);
+        tile->encoded_data->size = size;
+        tile->encoded_data->avail = size;
+        tile->encoded_data->pool = 0;
+        tile->mtime = 0;
+        memcpy(tile->encoded_data->buf, mt->tiles[0].encoded_data->buf, size); 
+        apr_pool_cleanup_register(ctx->pool, tile->encoded_data->buf,(void*)free, apr_pool_cleanup_null);
+        
+      }
       mapcache_unlock_resource(ctx, mapcache_tileset_metatile_resource_key(ctx,mt));
     }
-
+    
+    // don't retrieve tile from cache, use the previously generated (code above)
     /* the previous step has successfully finished, we can now query the cache to return the tile content */
-    ret = tile->tileset->cache->tile_get(ctx, tile);
+    /*ret = tile->tileset->cache->tile_get(ctx, tile);
     GC_CHECK_ERROR(ctx);
 
     if(ret != MAPCACHE_SUCCESS) {
@@ -665,10 +681,11 @@ void mapcache_tileset_tile_get(mapcache_context *ctx, mapcache_tile *tile)
         ctx->set_error(ctx, 500, "tileset %s: unknown error (another thread/process failed to create the tile I was waiting for)",
                        tile->tileset->name);
       } else {
-        /* shouldn't really happen, as the error ought to have been caught beforehand */
+        //shouldn't really happen, as the error ought to have been caught beforehand
         ctx->set_error(ctx, 500, "tileset %s: failed to re-get tile %d %d %d from cache after set", tile->tileset->name,tile->x,tile->y,tile->z);
       }
     }
+    */
   }
   /* update the tile expiration time */
   if(tile->tileset->auto_expire && tile->mtime) {

@@ -463,6 +463,7 @@ struct mapcache_cache_s3 {
   char *secret_key;
   char *host; // for example "s3-eu-west-1.amazonaws.com"
   char *bucket; // bucket-name
+  unsigned int maxzoom; // max zoom level for caching, higher requests are not stored
 
   /**
    * Set filename for a given tile

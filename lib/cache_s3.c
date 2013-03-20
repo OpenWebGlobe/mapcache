@@ -301,17 +301,6 @@ static void _mapcache_cache_s3_tilecache_tile_key(mapcache_context *ctx, mapcach
                          tile->y,
                          tile->x,
                          tile->tileset->format?tile->tileset->format->extension:"png");
-    
-    /**path = apr_psprintf(ctx->pool,"%s/%02d/%03d/%03d/%03d/%03d/%03d/%03d.%s",
-                         start,
-                         tile->z,
-                         tile->x / 1000000,
-                         (tile->x / 1000) % 1000,
-                         tile->x % 1000,
-                         tile->y / 1000000,
-                         (tile->y / 1000) % 1000,
-                         tile->y % 1000,
-                         tile->tileset->format?tile->tileset->format->extension:"png");*/
   } else {
     *path = dcache->filename_template;
     *path = mapcache_util_str_replace(ctx->pool,*path, "{tileset}", tile->tileset->name);
@@ -454,6 +443,14 @@ static int _mapcache_cache_s3_has_tile(mapcache_context *ctx, mapcache_tile *til
   
   cache = (mapcache_cache_s3*)tile->tileset->cache;
   
+  if (cache->maxzoom>0)  // maxzoom is set
+  {
+    if (tile->z>cache->maxzoom)
+    {
+      return MAPCACHE_FALSE;
+    }
+  }
+  
   cache->tile_key(ctx, tile, &filename);
   if(GC_HAS_ERROR(ctx)) {
     return MAPCACHE_FALSE;
@@ -514,8 +511,18 @@ static int _mapcache_cache_s3_get(mapcache_context *ctx, mapcache_tile *tile)
 {
   char *filename;
   mapcache_cache_s3* cache;
+  
 
   cache = (mapcache_cache_s3*)tile->tileset->cache;
+  
+  if (cache->maxzoom>0)  // maxzoom is set
+  {
+    if (tile->z>cache->maxzoom)
+    {
+      return MAPCACHE_CACHE_MISS;
+    }
+  }
+  
   cache->tile_key(ctx, tile, &filename);
   if(GC_HAS_ERROR(ctx)) 
   {
@@ -581,7 +588,7 @@ static void _mapcache_cache_s3_set(mapcache_context *ctx, mapcache_tile *tile)
   mapcache_cache_s3* cache;
   
   cache = (mapcache_cache_s3*)tile->tileset->cache;
-
+  
 #ifdef DEBUG
   /* all this should be checked at a higher level */
   if(!tile->encoded_data && !tile->raw_image) {
@@ -601,6 +608,15 @@ static void _mapcache_cache_s3_set(mapcache_context *ctx, mapcache_tile *tile)
   {
     tile->encoded_data = tile->tileset->format->write(ctx, tile->raw_image, tile->tileset->format);
     GC_CHECK_ERROR(ctx);
+  }
+  
+  /* maxzoom is set, don't write to cache if zoom level is higher */
+  if (cache->maxzoom>0)  
+  {
+    if (tile->z>cache->maxzoom)
+    {
+      return;
+    }
   }
   
   S3BucketContext bucketContext;
@@ -685,6 +701,11 @@ static void _mapcache_cache_s3_configuration_parse_xml(mapcache_context *ctx, ez
   {
     dcache->bucket = apr_pstrdup(ctx->pool,cur_node->txt);
   }
+  
+  if ((cur_node = ezxml_child(node,"maxzoom")) != NULL) 
+  {
+    dcache->maxzoom = atoi(cur_node->txt);
+  }
 }
 
 //------------------------------------------------------------------------------
@@ -728,6 +749,7 @@ mapcache_cache* mapcache_cache_s3_create(mapcache_context *ctx)
   cache->secret_key = 0;
   cache->host = 0;
   cache->bucket = 0;
+  cache->maxzoom = 0;
   cache->cache.metadata = apr_table_make(ctx->pool,3);
   cache->cache.type = MAPCACHE_CACHE_S3;
   cache->cache.tile_delete = _mapcache_cache_s3_delete;
