@@ -15,7 +15,7 @@ state.
 
 ################################################################################  
   
-To enabled all new features, run configure this way:  
+To enable all new features, run configure this way:  
 ./configure --with-gdal --with-s3
 
 make sure to install gdal and libs3 and its dependencies.
@@ -23,7 +23,7 @@ make sure to install gdal and libs3 and its dependencies.
 (more info about libs3: http://libs3.ischo.com.s3.amazonaws.com/index.html)
 
 
-Example Configurations:
+** Example Configurations **
 
 Elevation:
   <source name="SRTM" type="gdal">
@@ -39,15 +39,27 @@ Elevation:
      <auto_expire>86400</auto_expire>
      <elevation/>
   </tileset>
-
+  
 S3-Cache:
   <cache name="s3cache" type="s3">
     <base>tiles</base>
     <host>s3-eu-west-1.amazonaws.com</host>
-    <bucket>owgcache</bucket>
+    <bucket>my_bucket_name</bucket>
     <access_key>HERE_IS_THE_ACCESS_KEY</access_key>
     <secret_key>and_here_is_secret_key</secret_key>
   </cache>
+  
+you can also limit the max zoom stored on S3:
+  if higher zoom levels are requested, they are retrieved from original source:
+  <cache name="s3cache" type="s3">
+    <base>tiles</base>
+    <host>s3-eu-west-1.amazonaws.com</host>
+    <bucket>my_bucket_name</bucket>
+    <access_key>HERE_IS_THE_ACCESS_KEY</access_key>
+    <secret_key>and_here_is_secret_key</secret_key>
+    <maxzoom>15</maxzoom>
+  </cache>
+  
 
   
   
