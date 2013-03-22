@@ -442,6 +442,7 @@ struct mapcache_cache_disk {
   char *filename_template;
   int symlink_blank;
   int creation_retry;
+  unsigned int maxzoom;
 
   /**
    * Set filename for a given tile

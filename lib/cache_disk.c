@@ -303,6 +303,16 @@ static int _mapcache_cache_disk_has_tile(mapcache_context *ctx, mapcache_tile *t
   char *filename;
   apr_finfo_t finfo;
   int rv;
+  
+  mapcache_cache_disk* cache = (mapcache_cache_disk*)tile->tileset->cache;
+  if (cache->maxzoom>0)  // maxzoom is set
+  {
+    if (tile->z>cache->maxzoom)
+    {
+      return MAPCACHE_FALSE;
+    }
+  }
+  
   ((mapcache_cache_disk*)tile->tileset->cache)->tile_key(ctx, tile, &filename);
   if(GC_HAS_ERROR(ctx)) {
     return MAPCACHE_FALSE;
@@ -345,6 +355,15 @@ static int _mapcache_cache_disk_get(mapcache_context *ctx, mapcache_tile *tile)
   apr_status_t rv;
   apr_size_t size;
   apr_mmap_t *tilemmap;
+  
+  mapcache_cache_disk* cache = (mapcache_cache_disk*)tile->tileset->cache;
+  if (cache->maxzoom>0)  // maxzoom is set
+  {
+    if (tile->z>cache->maxzoom)
+    {
+      return MAPCACHE_CACHE_MISS;
+    }
+  }
 
   ((mapcache_cache_disk*)tile->tileset->cache)->tile_key(ctx, tile, &filename);
   if(GC_HAS_ERROR(ctx)) {
@@ -438,6 +457,20 @@ static void _mapcache_cache_disk_set(mapcache_context *ctx, mapcache_tile *tile)
     return;
   }
 #endif
+
+  mapcache_cache_disk* cache = (mapcache_cache_disk*)tile->tileset->cache;
+  if (cache->maxzoom>0)  // maxzoom is set
+  {
+    if (tile->z>cache->maxzoom)
+    {
+      if(!tile->encoded_data) 
+      {
+        tile->encoded_data = tile->tileset->format->write(ctx, tile->raw_image, tile->tileset->format);
+        GC_CHECK_ERROR(ctx);
+      }
+      return;
+    }
+  }
 
   ((mapcache_cache_disk*)tile->tileset->cache)->tile_key(ctx, tile, &filename);
   GC_CHECK_ERROR(ctx);
@@ -675,6 +708,12 @@ static void _mapcache_cache_disk_configuration_parse_xml(mapcache_context *ctx, 
   if ((cur_node = ezxml_child(node,"creation_retry")) != NULL) {
     dcache->creation_retry = atoi(cur_node->txt);
   }
+  
+  if ((cur_node = ezxml_child(node,"maxzoom")) != NULL) 
+  {
+    dcache->maxzoom = atoi(cur_node->txt);
+  }
+  
 }
 
 /**
@@ -704,6 +743,7 @@ mapcache_cache* mapcache_cache_disk_create(mapcache_context *ctx)
   }
   cache->symlink_blank = 0;
   cache->creation_retry = 0;
+  cache->maxzoom = 0;
   cache->cache.metadata = apr_table_make(ctx->pool,3);
   cache->cache.type = MAPCACHE_CACHE_DISK;
   cache->cache.tile_delete = _mapcache_cache_disk_delete;
