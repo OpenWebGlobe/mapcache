@@ -263,21 +263,20 @@ apr_status_t unregisterS3(void* param)
 
 static void mod_mapcache_child_init(apr_pool_t *pool, server_rec *s)
 {
+  int threaded;
+  pchild = pool;
+
 #ifdef USE_S3
    S3_initialize("s3", S3_INIT_ALL, NULL);
    apr_pool_cleanup_run(pool,NULL, unregisterS3);
 #endif
-   
-  pchild = pool;
+  
 #ifdef APR_HAS_THREADS
-  int threaded;
   ap_mpm_query(AP_MPMQ_IS_THREADED,&threaded);
   if(threaded) {
     apr_thread_mutex_create(&thread_mutex,APR_THREAD_MUTEX_DEFAULT,pool);
   }
 #endif
-
-
 }
 
 static int mod_mapcache_request_handler(request_rec *r)
