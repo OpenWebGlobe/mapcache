@@ -76,26 +76,54 @@ int _GetTileCoords(mapcache_map *map, int* zoom, int* x, int* y, int flipy)
   *y = 0;
 }
 
-/**
- * \private \memberof mapcache_source_tms
- * \sa mapcache_source::render_map()
- */
-void _mapcache_source_tms_render_map(mapcache_context *ctx, mapcache_map *map)
+//------------------------------------------------------------------------------
+void _mapcache_source_tms_render_map_elevation(mapcache_context *ctx, mapcache_map *map)
 {
-  // example: myserver.com/path/1.0.0/LAYER/lod/x/y.FORMAT
-  //          myserver.com/render/1.0.0/osm_traffic/1/1/0.png
-  //              -> <url>myserver.com/render</url>
-  //                 <layer>osm_traffic</layer>
-  //                 <format>png</format>
+  mapcache_source_tms *tms;
+  int elevationblock;
+  int zoom, x, y;
+  char* url;
   
+  tms = (mapcache_source_tms*)map->tileset->source;
+  elevationblock = map->grid_link->grid->elevationblock;
+  
+  _GetTileCoords(map, &zoom, &x, &y, tms->flipy);
+  
+  url = apr_psprintf(ctx->pool,"%s/1.0.0/%s/%i/%i/%i.%s", tms->url,tms->layer,zoom,x,y,tms->format);
+  tms->http->url = apr_pstrdup(ctx->pool,url);
+  
+  map->encoded_data = mapcache_buffer_create(30000,ctx->pool);
+  mapcache_http_do_request(ctx, tms->http, map->encoded_data, NULL, NULL);
+  GC_CHECK_ERROR(ctx);
+  
+  if(!mapcache_imageio_is_valid_format(ctx,map->encoded_data)) {
+    char *returned_data = apr_pstrndup(ctx->pool,(char*)map->encoded_data->buf,map->encoded_data->size);
+    ctx->set_error(ctx, 502, "tms request for tileset %s returned an unsupported format:\n%s",
+                   map->tileset->name, returned_data);
+    return;
+  }
+  
+  map->raw_image = mapcache_imageio_decode(ctx, map->encoded_data);
+  map->raw_image->is_elevation = MC_ELEVATION_YES;
+  GC_CHECK_ERROR(ctx);
+  
+  if (map->raw_image->w != elevationblock || map->raw_image->h != elevationblock)
+  {
+    ctx->set_error(ctx,500,"Error: size of heightmap from source is not configured propery!");
+  }
+  
+}
+//------------------------------------------------------------------------------
+void _mapcache_source_tms_render_map_image(mapcache_context *ctx, mapcache_map *map)
+{
   int zoom, x, y;
   mapcache_source_tms *tms;
   char* url;
   
   tms = (mapcache_source_tms*)map->tileset->source;
+  
   _GetTileCoords(map, &zoom, &x, &y, tms->flipy);
   
- 
   url = apr_psprintf(ctx->pool,"%s/1.0.0/%s/%i/%i/%i.%s", tms->url,tms->layer,zoom,x,y,tms->format);
   tms->http->url = apr_pstrdup(ctx->pool,url);
   
@@ -108,6 +136,36 @@ void _mapcache_source_tms_render_map(mapcache_context *ctx, mapcache_map *map)
     ctx->set_error(ctx, 502, "tms request for tileset %s returned an unsupported format:\n%s",
                    map->tileset->name, returned_data);
   }
+}
+
+/**
+ * \private \memberof mapcache_source_tms
+ * \sa mapcache_source::render_map()
+ */
+void _mapcache_source_tms_render_map(mapcache_context *ctx, mapcache_map *map)
+{
+  // example: myserver.com/path/1.0.0/LAYER/lod/x/y.FORMAT
+  //          myserver.com/render/1.0.0/osm_traffic/1/1/0.png
+  //              -> <url>myserver.com/render</url>
+  //                 <layer>osm_traffic</layer>
+  //                 <format>png</format>
+  mapcache_source_tms *tms;
+  
+  tms = (mapcache_source_tms*)map->tileset->source;
+  
+  int is_elevation = map->tileset->elevation; // is this an elevation source ?
+  
+  if (is_elevation)
+  {
+    // RGBA encoded elevation data from TMS source
+    _mapcache_source_tms_render_map_elevation(ctx, map);
+  }
+  else
+  {
+    // Standard image formt
+    _mapcache_source_tms_render_map_image(ctx, map);
+  }
+  
 }
 
 void _mapcache_source_tms_query(mapcache_context *ctx, mapcache_feature_info *fi)
