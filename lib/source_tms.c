@@ -44,7 +44,7 @@
 #define TMS_MIN(x,y)  ((x<y) ? x : y)
 #define TMS_MAX(x,y)  ((x>y) ? x : y)
 
-int _GetTileCoords(mapcache_map *map, int* zoom, int* x, int* y)
+int _GetTileCoords(mapcache_map *map, int* zoom, int* x, int* y, int flipy)
 {  
   double res0 = ceil((map->extent.maxx - map->extent.minx) / (map->width));
   double res1 = ceil((map->extent.maxy - map->extent.miny) / (map->height));
@@ -59,9 +59,14 @@ int _GetTileCoords(mapcache_map *map, int* zoom, int* x, int* y)
     {
        *zoom = i;
        *x = (int)floor((map->extent.minx - map->grid_link->grid->extent.minx) / (res * map->width));
-       // TODO: add a way to customize origin (top left, bottom left)
-       *y = (int)((1 << *zoom) - 1 - floor((map->extent.miny - map->grid_link->grid->extent.miny) / (res * map->height)));
-      
+       if (flipy)
+       {
+          *y = (int)((1 << *zoom) - 1 - floor((map->extent.miny - map->grid_link->grid->extent.miny) / (res * map->height)));
+       }
+       else
+       {
+          *y = (int)floor((map->extent.miny - map->grid_link->grid->extent.miny) / (res * map->height));
+       }
        return;
     }
   }
@@ -84,11 +89,14 @@ void _mapcache_source_tms_render_map(mapcache_context *ctx, mapcache_map *map)
   //                 <format>png</format>
   
   int zoom, x, y;
- _GetTileCoords(map, &zoom, &x, &y);
+  mapcache_source_tms *tms;
+  char* url;
+  
+  tms = (mapcache_source_tms*)map->tileset->source;
+  _GetTileCoords(map, &zoom, &x, &y, tms->flipy);
   
  
-  mapcache_source_tms *tms = (mapcache_source_tms*)map->tileset->source;
-  char* url = apr_psprintf(ctx->pool,"%s/1.0.0/%s/%i/%i/%i.%s", tms->url,tms->layer,zoom,x,y,tms->format);
+  url = apr_psprintf(ctx->pool,"%s/1.0.0/%s/%i/%i/%i.%s", tms->url,tms->layer,zoom,x,y,tms->format);
   tms->http->url = apr_pstrdup(ctx->pool,url);
   
   map->encoded_data = mapcache_buffer_create(30000,ctx->pool);
@@ -129,6 +137,10 @@ void _mapcache_source_tms_configuration_parse_xml(mapcache_context *ctx, ezxml_t
     if ((cur_node = ezxml_child(node,"format")) != NULL) {
     src->format = apr_pstrdup(ctx->pool,cur_node->txt);
   }
+  
+  if ((cur_node = ezxml_child(node,"flipy")) != NULL) {
+    src->flipy = TRUE;
+  }
 }
 
 /**
@@ -151,6 +163,7 @@ mapcache_source* mapcache_source_tms_create(mapcache_context *ctx)
   source->http = NULL;
   source->url = NULL;
   source->layer = NULL;
+  source->flipy = FALSE;
   source->source.type = MAPCACHE_SOURCE_TMS;
   source->source.render_map = _mapcache_source_tms_render_map;
   source->source.configuration_check = _mapcache_source_tms_configuration_check;

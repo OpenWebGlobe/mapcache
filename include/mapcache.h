@@ -330,6 +330,7 @@ struct mapcache_source_tms {
   char* url;  /**< base URL of TMS service */
   char* layer; /**< name of layer to be used */
   char* format; /**< format of tile ("png" or "jpg") */
+  int flipy; /**< flip y-axis */
   mapcache_http *http;
 };
 
