@@ -44,7 +44,7 @@
 #define TMS_MIN(x,y)  ((x<y) ? x : y)
 #define TMS_MAX(x,y)  ((x>y) ? x : y)
 
-int _GetTileCoords(mapcache_map *map, int* zoom, int* x, int* y, int flipy)
+void _GetTileCoords(mapcache_map *map, int* zoom, int* x, int* y, int flipy)
 {  
   double res0 = ceil((map->extent.maxx - map->extent.minx) / (map->width));
   double res1 = ceil((map->extent.maxy - map->extent.miny) / (map->height));
@@ -83,6 +83,7 @@ void _mapcache_source_tms_render_map_elevation(mapcache_context *ctx, mapcache_m
   int elevationblock;
   int zoom, x, y;
   char* url;
+  double dx, dy;
   
   tms = (mapcache_source_tms*)map->tileset->source;
   elevationblock = map->grid_link->grid->elevationblock;
@@ -106,6 +107,14 @@ void _mapcache_source_tms_render_map_elevation(mapcache_context *ctx, mapcache_m
   map->raw_image = mapcache_imageio_decode(ctx, map->encoded_data);
   map->raw_image->is_elevation = MC_ELEVATION_YES;
   GC_CHECK_ERROR(ctx);
+  
+  //map->raw_image->stride = 4 * elevationblock;
+  dx = fabs(map->grid_link->grid->extent.maxx-map->grid_link->grid->extent.minx);
+  dy = fabs(map->grid_link->grid->extent.maxx-map->grid_link->grid->extent.minx);
+  map->raw_image->x0 = map->extent.minx / dx * 2.0;
+  map->raw_image->y0 = map->extent.miny / dy * 2.0;
+  map->raw_image->x1 = map->extent.maxx / dx * 2.0;
+  map->raw_image->y1 = map->extent.maxy / dy * 2.0;
   
   if (map->raw_image->w != elevationblock || map->raw_image->h != elevationblock)
   {
