@@ -116,7 +116,7 @@ mapcache_image* _mapcache_imageio_raw_decode(mapcache_context *ctx, mapcache_buf
 {  
   mapcache_image *img = mapcache_image_create(ctx);
   
-  _mapcache_imageio_json_decode_to_image(ctx, buffer,img);
+  _mapcache_imageio_raw_decode_to_image(ctx, buffer,img);
   if(GC_HAS_ERROR(ctx)) {
     return NULL;
   }

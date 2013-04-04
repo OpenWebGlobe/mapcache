@@ -37,7 +37,7 @@
 int mapcache_imageio_is_valid_format(mapcache_context *ctx, mapcache_buffer *buffer)
 {
   mapcache_image_format_type t = mapcache_imageio_header_sniff(ctx,buffer);
-  if(t==GC_PNG || t==GC_JPEG) {
+  if(t==GC_PNG || t==GC_JPEG || t==GC_RAW) {
     return MAPCACHE_TRUE;
   } else {
     return MAPCACHE_FALSE;
