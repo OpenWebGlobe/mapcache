@@ -223,7 +223,7 @@ inline void _ReadImageDataMemGray(unsigned char* buffer, int bufferwidth,
   }
  
   
-  if (fabs(value-NODATA)<GM_EPSILONFLT)
+  if (fabs(value-NODATA)<GM_EPSILONFLT || value<-9000)
   {
     *b=0; *g=0; *r=0; *a=0;
   }
@@ -296,7 +296,7 @@ inline void _ReadImageDataMemElv(unsigned char* buffer,
   }
  
   
-  if (value <= NODATA)
+  if (value <= NODATA || value<-9000)
   {
     value = 0.0f;
   }
