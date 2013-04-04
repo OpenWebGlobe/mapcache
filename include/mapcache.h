@@ -87,6 +87,7 @@ typedef struct mapcache_image_format_png mapcache_image_format_png;
 typedef struct mapcache_image_format_png_q mapcache_image_format_png_q;
 typedef struct mapcache_image_format_jpeg mapcache_image_format_jpeg;
 typedef struct mapcache_image_format_json mapcache_image_format_json; // would be "elevation_format"
+typedef struct mapcache_image_format_raw mapcache_image_format_raw;
 typedef struct mapcache_cfg mapcache_cfg;
 typedef struct mapcache_tileset mapcache_tileset;
 typedef struct mapcache_cache mapcache_cache;
@@ -899,7 +900,7 @@ void mapcache_service_dispatch_request(mapcache_context *ctx,
 /** @{ */
 
 typedef enum {
-  GC_UNKNOWN, GC_PNG, GC_JPEG, GC_JSON
+  GC_UNKNOWN, GC_PNG, GC_JPEG, GC_JSON, GC_RAW
 } mapcache_image_format_type;
 
 typedef enum {
@@ -1706,6 +1707,35 @@ void _mapcache_imageio_jpeg_decode_to_image(mapcache_context *ctx, mapcache_buff
     mapcache_image *image);
 
 /** @} */
+
+/**
+ * \brief RAW elevation format
+ * \extends mapcache_image_format
+ */
+struct mapcache_image_format_raw {
+  mapcache_image_format format;
+  int version;
+};
+
+/**
+ * \brief create raw frmat
+ * \memberof mapcache_image_format_raw
+ * @param pool
+ * @param name
+ * @return
+ */
+mapcache_image_format* mapcache_imageio_create_raw_format(apr_pool_t *pool, char *name);
+
+/**
+ * @param r
+ * @param buffer
+ * @return
+ */
+mapcache_image* _mapcache_imageio_raw_decode(mapcache_context *ctx, mapcache_buffer *buffer);
+
+void _mapcache_imageio_raw_decode_to_image(mapcache_context *ctx, mapcache_buffer *buffer,
+    mapcache_image *image);
+
 
 /**
  * \brief lookup the first few bytes of a buffer to check for a known image format
