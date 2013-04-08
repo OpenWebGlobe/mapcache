@@ -58,14 +58,14 @@ void _GetTileCoords(mapcache_map *map, int* zoom, int* x, int* y, int flipy)
     if (res < res_up)
     {
        *zoom = i;
-       *x = (int)floor((map->extent.minx - map->grid_link->grid->extent.minx) / (res * map->width));
+       *x = (int)floor((map->extent.minx - map->grid_link->grid->extent.minx) / (res * map->width) + 0.5);
        if (flipy)
        {
           *y = (int)((1 << *zoom) - 1 - floor((map->extent.miny - map->grid_link->grid->extent.miny) / (res * map->height)));
        }
        else
        {
-          *y = (int)floor((map->extent.miny - map->grid_link->grid->extent.miny) / (res * map->height));
+          *y = (int)floor((map->extent.miny - map->grid_link->grid->extent.miny) / (res * map->height) + 0.5);
        }
        return;
     }
